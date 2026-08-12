@@ -2,6 +2,10 @@ node_modules/
 dist/
 .env
 .env.*
+# The template must be committed: it is the only documentation of which variables
+# exist and which ones the server refuses to start without. `.env.*` above would
+# otherwise swallow it.
+!.env.example
 *.sqlite
 uploads/
 *.log
