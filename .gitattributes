@@ -20,5 +20,7 @@ Dockerfile      text eol=lf
 *.pdf           binary
 *.sqlite        binary
 
-# Lockfiles are generated: collapse them in review diffs.
-package-lock.json linguist-generated=true -diff
+# Lockfiles are generated: collapse them in review views. Deliberately without
+# `-diff` — that would make git treat them as binary and hide dependency version
+# changes, which are exactly what a reviewer needs to see.
+package-lock.json linguist-generated=true
