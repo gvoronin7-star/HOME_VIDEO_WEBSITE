@@ -1,0 +1,168 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push supersedes an in-flight run on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend — types, build, tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      # ffmpeg brings ffprobe, which the narration step uses to measure how long
+      # each spoken line lasts. Without it the tests still pass via the estimate
+      # path, but installing it exercises the real one.
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - run: npm ci
+
+      - name: Type-check sources
+        run: npm run typecheck
+
+      - name: Type-check tests
+        run: npm run typecheck:tests
+
+      - name: Build
+        run: npm run build
+
+      - name: Tests
+        run: npm test
+        env:
+          # Startup-guard tests launch the compiled server; keep its logs readable.
+          LOG_LEVEL: info
+
+  frontend:
+    name: Frontend — types and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+  images:
+    name: Docker images build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # This job exists because of a real incident: `.dockerignore` excluded the
+      # frontend `src` directory, so the image could not be built at all while
+      # every local command still worked. Nothing else in CI would have caught it.
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: false
+          load: true
+          tags: family-cinema-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: false
+          load: true
+          tags: family-cinema-frontend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Validate compose file
+        run: docker compose config --quiet
+        env:
+          JWT_SECRET: ci-placeholder-secret-not-used-at-runtime
+
+  smoke:
+    name: Compose smoke test
+    runs-on: ubuntu-latest
+    needs: images
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Brings the whole stack up the way a deployment does and checks the two
+      # things that were silently broken before: that the schema and reference
+      # data are created, and that a story can actually be created.
+      - name: Start the stack
+        run: docker compose up -d --build
+        env:
+          NODE_ENV: production
+          JWT_SECRET: ci-only-secret-Q7pX2vZ9mK4rT8wY6nB3jL5hF1dS0aG
+          PUBLIC_URL: http://localhost:3000
+
+      - name: Wait for the API to report healthy
+        run: |
+          for attempt in $(seq 1 40); do
+            body=$(curl -fsS http://localhost:4000/api/health || true)
+            echo "$body"
+            if echo "$body" | grep -q '"database":"ok"'; then
+              echo "API is up"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "API did not become healthy in time"
+          docker compose logs --no-color
+          exit 1
+
+      - name: Reference data must be seeded (B3)
+        run: |
+          templates=$(curl -fsS http://localhost:4000/api/templates)
+          echo "$templates"
+          # An empty list makes story creation impossible: a template is required.
+          echo "$templates" | grep -q '"templates":\[{' || {
+            echo "Templates are empty — the init step did not run"
+            docker compose logs --no-color init
+            exit 1
+          }
+
+      - name: Frontend must serve the SPA
+        run: curl -fsS http://localhost:3000 | grep -qi '<div id="root"'
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

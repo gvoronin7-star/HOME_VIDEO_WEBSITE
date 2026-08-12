@@ -1,0 +1,19 @@
+{
+  "name": "family-cinema",
+  "version": "1.0.0",
+  "description": "MVP сервиса для создания семейных видео из фото с ИИ-сценарием и озвучкой",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "install:all": "cd backend && npm install && cd ../frontend && npm install",
+    "build": "cd backend && npm run build && cd ../frontend && npm run build",
+    "test": "cd backend && npm test",
+    "typecheck": "cd backend && npm run typecheck && npm run typecheck:tests && cd ../frontend && npx tsc --noEmit",
+    "ci": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

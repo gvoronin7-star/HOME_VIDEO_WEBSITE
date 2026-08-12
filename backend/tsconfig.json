@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    // Required by Sequelize: at target ES2022 this defaults to true, which emits
+    // the models' `public id!: string` declarations as real class fields. Those
+    // fields shadow Sequelize's attribute getters, so every attribute read
+    // (user.id, story.status) returns undefined at runtime while toJSON() still
+    // serialises correctly — silently breaking auth and all status checks.
+    "useDefineForClassFields": false,
+    "module": "commonjs",
+    "lib": ["ES2022"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": false,
+    "sourceMap": true,
+    "moduleResolution": "node",
+    "baseUrl": "./src",
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "tests", "vitest.config.mts"]
+}

@@ -1,0 +1,24 @@
+# Development happens on Windows; Docker images and CI build on Linux. Storing LF
+# in the repository keeps the two consistent and avoids whole-file diffs caused by
+# line endings alone.
+* text=auto eol=lf
+
+# Files that must stay LF regardless of local settings: a CRLF here breaks the
+# shell inside the image.
+Dockerfile      text eol=lf
+*.sh            text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.conf          text eol=lf
+
+# Binary — never touch, never diff.
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.webp          binary
+*.mp4           binary
+*.pdf           binary
+*.sqlite        binary
+
+# Lockfiles are generated: collapse them in review diffs.
+package-lock.json linguist-generated=true -diff

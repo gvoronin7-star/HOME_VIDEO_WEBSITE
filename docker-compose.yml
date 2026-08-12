@@ -1,0 +1,132 @@
+# Shared backend configuration. The init step and the API must agree on
+# database, Redis and storage settings, so they are declared once here.
+x-backend-env: &backend-env
+  NODE_ENV: ${NODE_ENV:-development}
+  PORT: ${PORT:-4000}
+  DB_DIALECT: postgres
+  DB_HOST: postgres
+  DB_PORT: 5432
+  DB_NAME: ${DB_NAME:-family_cinema}
+  DB_USER: ${DB_USER:-postgres}
+  DB_PASSWORD: ${DB_PASSWORD:-postgres}
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+  # No default on purpose: a published fallback secret is a published master key.
+  # Left empty, the backend warns in development and refuses to start in production.
+  # Generate one with:
+  #   node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+  JWT_SECRET: ${JWT_SECRET:-}
+  STORAGE_TYPE: local
+  STORAGE_PATH: /app/uploads
+  CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+  # Origin of the frontend as reached from the browser. Share links and QR codes
+  # are built from this, so it points at the published nginx port, not the API.
+  # If you change FRONTEND_PORT, set PUBLIC_URL to match — the default below is a
+  # plain literal, it does not track FRONTEND_PORT.
+  # On a real host: PUBLIC_URL=https://cinema.example.com
+  PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  # OpenAI-compatible endpoint serving both the script and the narration.
+  # ProxyAPI: https://api.proxyapi.ru/openai/v1 — empty means official OpenAI.
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.proxyapi.ru/openai/v1}
+  OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+  TTS_SERVICE: ${TTS_SERVICE:-openai}
+  TTS_MODEL: ${TTS_MODEL:-gpt-4o-mini-tts}
+  TTS_FORMAT: ${TTS_FORMAT:-mp3}
+  MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-10}
+  MAX_PHOTOS: ${MAX_PHOTOS:-20}
+  FILE_RETENTION_DAYS: ${FILE_RETENTION_DAYS:-7}
+  RETENTION_SWEEP_HOURS: ${RETENTION_SWEEP_HOURS:-6}
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: family-cinema-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-family_cinema}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - family-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: family-cinema-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - family-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # One-shot schema initialisation and reference-data seeding.
+  # Without this the `templates` table is empty, and picking a template is
+  # mandatory — so no story can be created at all. Both scripts are idempotent.
+  init:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: family-cinema-init
+    command: sh -c "node dist/utils/migrate.js && node dist/utils/seed.js"
+    environment: *backend-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - family-network
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: family-cinema-backend
+    ports:
+      - "${PORT:-4000}:4000"
+    environment: *backend-env
+    volumes:
+      - uploads-data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+    networks:
+      - family-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: family-cinema-frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - backend
+    networks:
+      - family-network
+
+volumes:
+  postgres-data:
+  redis-data:
+  uploads-data:
+
+networks:
+  family-network:
+    driver: bridge

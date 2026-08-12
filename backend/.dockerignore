@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.env.*
+*.sqlite
+uploads
+.git
+.gitignore
+README.md
+*.md

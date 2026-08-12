@@ -1,0 +1,12 @@
+{
+  // Type-checks the test suite. The build config cannot do it: its `rootDir` is
+  // `src`, so any file outside would be rejected.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["src/**/*", "tests/**/*", "vitest.config.mts"],
+  "exclude": ["node_modules", "dist"]
+}
