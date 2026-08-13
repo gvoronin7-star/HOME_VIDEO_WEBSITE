@@ -44,17 +44,26 @@ export class RenderService {
       // so no value needs quoting or escaping.
       const args = [
         '-y',
-        '-f', 'concat',
-        '-safe', '0',
-        '-i', concatFile,
+        '-f',
+        'concat',
+        '-safe',
+        '0',
+        '-i',
+        concatFile,
         ...(audioPath ? ['-i', audioPath] : []),
-        '-c:v', 'libx264',
-        '-preset', 'medium',
-        '-crf', '23',
-        '-r', '30',
-        '-pix_fmt', 'yuv420p',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'medium',
+        '-crf',
+        '23',
+        '-r',
+        '30',
+        '-pix_fmt',
+        'yuv420p',
         ...(audioPath ? ['-c:a', 'aac', '-b:a', '128k', '-shortest'] : []),
-        '-movflags', '+faststart',
+        '-movflags',
+        '+faststart',
         outputPath,
       ];
 
@@ -73,7 +82,7 @@ export class RenderService {
       return { videoUrl, durationMs: duration * 1000 };
     } catch (error: any) {
       logger.error({ error: error.message }, 'Video rendering failed');
-      throw new Error(`Video rendering failed: ${error.message}`);
+      throw new Error(`Video rendering failed: ${error.message}`, { cause: error });
     } finally {
       // Cleanup temp directory
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -101,7 +110,7 @@ export class RenderService {
    */
   private async prepareSlides(
     slides: Array<{ imagePath: string; caption: string; durationSeconds: number }>,
-    tempDir: string
+    tempDir: string,
   ): Promise<string[]> {
     const slideFiles: string[] = [];
 
@@ -132,18 +141,24 @@ export class RenderService {
           '-vf',
           `drawtext=textfile=${captionFile}${fontFile}` +
             ':fontsize=28:fontcolor=white:box=1:boxcolor=black@0.4' +
-            ':boxborderw=10:x=(w-text_w)/2:y=h-text_h-50'
+            ':boxborderw=10:x=(w-text_w)/2:y=h-text_h-50',
         );
       }
 
       args.push(
-        '-c:v', 'libx264',
-        '-preset', 'ultrafast',
-        '-t', String(slide.durationSeconds),
-        '-r', '30',
-        '-pix_fmt', 'yuv420p',
-        '-s', '1920x1080',
-        outputFile
+        '-c:v',
+        'libx264',
+        '-preset',
+        'ultrafast',
+        '-t',
+        String(slide.durationSeconds),
+        '-r',
+        '30',
+        '-pix_fmt',
+        'yuv420p',
+        '-s',
+        '1920x1080',
+        outputFile,
       );
 
       // cwd lets drawtext reference the caption file by name.

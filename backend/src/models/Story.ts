@@ -18,13 +18,32 @@ interface StoryAttributes {
   pdfUrl: string | null;
   qrCodeUrl: string | null;
   publicUrl: string | null;
+  // Opaque id the public share page and QR code are built from — deliberately
+  // not the story's own primary key, so a revoked/rotated link cannot be
+  // recovered by anyone who still has the old one, and rotating it never
+  // touches the story's id or any foreign key that points at it.
+  shareToken: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
-interface StoryCreationAttributes extends Optional<StoryAttributes, 'id' | 'createdAt' | 'updatedAt' | 'scriptText' | 'videoUrl' | 'pdfUrl' | 'qrCodeUrl' | 'publicUrl'> {}
+type StoryCreationAttributes = Optional<
+  StoryAttributes,
+  | 'id'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'scriptText'
+  | 'videoUrl'
+  | 'pdfUrl'
+  | 'qrCodeUrl'
+  | 'publicUrl'
+  | 'shareToken'
+>;
 
-export class Story extends Model<StoryAttributes, StoryCreationAttributes> implements StoryAttributes {
+export class Story
+  extends Model<StoryAttributes, StoryCreationAttributes>
+  implements StoryAttributes
+{
   public id!: string;
   public userId!: string;
   public title!: string;
@@ -37,6 +56,7 @@ export class Story extends Model<StoryAttributes, StoryCreationAttributes> imple
   public pdfUrl!: string | null;
   public qrCodeUrl!: string | null;
   public publicUrl!: string | null;
+  public shareToken!: string | null;
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
 
@@ -85,7 +105,14 @@ Story.init(
       },
     },
     status: {
-      type: DataTypes.ENUM('draft', 'script_generating', 'script_ready', 'rendering', 'ready', 'error'),
+      type: DataTypes.ENUM(
+        'draft',
+        'script_generating',
+        'script_ready',
+        'rendering',
+        'ready',
+        'error',
+      ),
       defaultValue: 'draft',
     },
     tone: {
@@ -116,6 +143,11 @@ Story.init(
       type: DataTypes.TEXT,
       allowNull: true,
     },
+    shareToken: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      unique: true,
+    },
     createdAt: {
       type: DataTypes.DATE,
       allowNull: false,
@@ -131,7 +163,7 @@ Story.init(
     sequelize,
     tableName: 'stories',
     timestamps: true,
-  }
+  },
 );
 
 export default Story;

@@ -84,10 +84,30 @@ const templates = [
 ];
 
 const voiceProfiles = [
-  { name: 'Елена (тёплый)', gender: 'female' as const, emotion: 'warm', apiVoiceId: 'ru-RU-DariyaNeural' },
-  { name: 'Мария (спокойный)', gender: 'female' as const, emotion: 'calm', apiVoiceId: 'ru-RU-SvetlanaNeural' },
-  { name: 'Алексей (тёплый)', gender: 'male' as const, emotion: 'warm', apiVoiceId: 'ru-RU-DmitryNeural' },
-  { name: 'Иван (спокойный)', gender: 'male' as const, emotion: 'calm', apiVoiceId: 'ru-RU-MaximNeural' },
+  {
+    name: 'Елена (тёплый)',
+    gender: 'female' as const,
+    emotion: 'warm',
+    apiVoiceId: 'ru-RU-DariyaNeural',
+  },
+  {
+    name: 'Мария (спокойный)',
+    gender: 'female' as const,
+    emotion: 'calm',
+    apiVoiceId: 'ru-RU-SvetlanaNeural',
+  },
+  {
+    name: 'Алексей (тёплый)',
+    gender: 'male' as const,
+    emotion: 'warm',
+    apiVoiceId: 'ru-RU-DmitryNeural',
+  },
+  {
+    name: 'Иван (спокойный)',
+    gender: 'male' as const,
+    emotion: 'calm',
+    apiVoiceId: 'ru-RU-MaximNeural',
+  },
 ];
 
 async function seed() {

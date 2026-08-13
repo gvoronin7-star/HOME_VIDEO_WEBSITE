@@ -33,9 +33,7 @@ export function validateSecurityConfig(): void {
   } else if (KNOWN_WEAK_SECRETS.has(secret)) {
     problems.push('JWT_SECRET равен значению из примера конфигурации — оно общеизвестно');
   } else if (secret.length < MIN_SECRET_LENGTH) {
-    problems.push(
-      `JWT_SECRET короче ${MIN_SECRET_LENGTH} символов (сейчас ${secret.length})`
-    );
+    problems.push(`JWT_SECRET короче ${MIN_SECRET_LENGTH} символов (сейчас ${secret.length})`);
   }
 
   if (problems.length === 0) {
@@ -46,7 +44,7 @@ export function validateSecurityConfig(): void {
     logger.fatal(
       { problems },
       'Небезопасная конфигурация для production. Задайте стойкий JWT_SECRET, ' +
-        'например: node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'base64url\'))"'
+        "например: node -e \"console.log(require('crypto').randomBytes(48).toString('base64url'))\"",
     );
     process.exit(1);
   }
@@ -54,6 +52,6 @@ export function validateSecurityConfig(): void {
   logger.warn(
     { problems, nodeEnv: config.server.nodeEnv },
     'Небезопасная конфигурация — допустимо только для локальной разработки. ' +
-      'В production сервер с такими значениями не запустится'
+      'В production сервер с такими значениями не запустится',
   );
 }

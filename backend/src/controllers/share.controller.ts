@@ -2,8 +2,6 @@ import { Request, Response, NextFunction } from 'express';
 import { Story } from '../models';
 import { StorySlide } from '../models/StorySlide';
 import { Template } from '../models';
-import { storageService } from '../services/storage.service';
-import { logger } from '../utils/logger';
 import { bindAll } from '../utils/bindAll';
 
 export class ShareController {
@@ -13,13 +11,16 @@ export class ShareController {
   }
 
   /**
-   * GET /api/share/:id
-   * Public view of a story.
+   * GET /api/share/:token
+   * Public view of a story, addressed by its share token rather than its id —
+   * revoking or rotating the token (see StoryController.revokeShareLink /
+   * rotateShareLink) invalidates every link built from the old value without
+   * touching the story's id or anything that references it.
    */
   async getPublicStory(req: Request, res: Response, next: NextFunction) {
     try {
       const story = await Story.findOne({
-        where: { id: req.params.id, status: 'ready' },
+        where: { shareToken: req.params.token, status: 'ready' },
         include: [
           { model: Template, as: 'template', attributes: ['id', 'name', 'description'] },
           { model: StorySlide, as: 'slides', order: [['orderIndex', 'ASC']] },

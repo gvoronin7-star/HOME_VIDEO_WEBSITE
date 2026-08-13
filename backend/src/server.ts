@@ -27,14 +27,14 @@ const REQUIRED_TABLES = [
  */
 async function assertSchemaPresent(): Promise<void> {
   const existing = (await sequelize.getQueryInterface().showAllTables()).map((table) =>
-    String(table).toLowerCase()
+    String(table).toLowerCase(),
   );
   const missing = REQUIRED_TABLES.filter((table) => !existing.includes(table));
 
   if (missing.length > 0) {
     logger.fatal(
       { missing },
-      'Схема БД не инициализирована. Выполните "node dist/utils/migrate.js" (или "npm run migrate") перед запуском сервера'
+      'Схема БД не инициализирована. Выполните "node dist/utils/migrate.js" (или "npm run migrate") перед запуском сервера',
     );
     process.exit(1);
   }

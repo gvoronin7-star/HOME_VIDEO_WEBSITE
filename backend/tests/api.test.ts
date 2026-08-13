@@ -1,7 +1,13 @@
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
-import { bootTestApp, makeJpeg, registerUser, seedTemplate, seedVoiceProfiles } from './helpers/testApp';
+import {
+  bootTestApp,
+  makeJpeg,
+  registerUser,
+  seedTemplate,
+  seedVoiceProfiles,
+} from './helpers/testApp';
 
 let app: Express;
 let models: any;
@@ -121,7 +127,7 @@ describe('story creation (B1)', () => {
           const story = await models.Story.findByPk(storyId);
           return story.status;
         },
-        { timeout: 20_000, interval: 250 }
+        { timeout: 20_000, interval: 250 },
       )
       .not.toBe('draft');
   });
@@ -153,7 +159,7 @@ describe('story creation (B1)', () => {
     await request(app).get('/api/stories').expect(401);
   });
 
-  it('does not expose another user\'s story', async () => {
+  it("does not expose another user's story", async () => {
     const owner = await registerUser(app);
     const stranger = await registerUser(app);
     const template = await seedTemplate(models);
@@ -199,7 +205,13 @@ describe('slide editing (F4)', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({
         slides: [
-          { id: slide.id, orderIndex: 0, caption: 'Новый текст кадра.', durationSeconds: 7, isKeyFrame: true },
+          {
+            id: slide.id,
+            orderIndex: 0,
+            caption: 'Новый текст кадра.',
+            durationSeconds: 7,
+            isKeyFrame: true,
+          },
         ],
       })
       .expect(200);
@@ -219,7 +231,9 @@ describe('slide editing (F4)', () => {
     await request(app)
       .put(`/api/stories/${storyId}/slides`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ slides: [{ id: slide.id, orderIndex: 0, caption, durationSeconds: 4, isKeyFrame: false }] })
+      .send({
+        slides: [{ id: slide.id, orderIndex: 0, caption, durationSeconds: 4, isKeyFrame: false }],
+      })
       .expect(200);
 
     await slide.reload();
@@ -238,13 +252,19 @@ describe('slide editing (F4)', () => {
     const bodies: Record<string, unknown> = {
       'an empty slide array': { slides: [] },
       'a duration above the maximum': {
-        slides: [{ id: slide.id, orderIndex: 0, caption: 'ок', durationSeconds: 999, isKeyFrame: false }],
+        slides: [
+          { id: slide.id, orderIndex: 0, caption: 'ок', durationSeconds: 999, isKeyFrame: false },
+        ],
       },
       'a duration below the minimum': {
-        slides: [{ id: slide.id, orderIndex: 0, caption: 'ок', durationSeconds: 0, isKeyFrame: false }],
+        slides: [
+          { id: slide.id, orderIndex: 0, caption: 'ок', durationSeconds: 0, isKeyFrame: false },
+        ],
       },
       'a non-uuid slide id': {
-        slides: [{ id: 'not-a-uuid', orderIndex: 0, caption: 'ок', durationSeconds: 4, isKeyFrame: false }],
+        slides: [
+          { id: 'not-a-uuid', orderIndex: 0, caption: 'ок', durationSeconds: 4, isKeyFrame: false },
+        ],
       },
       'a control character in the caption': {
         slides: [
@@ -345,11 +365,107 @@ describe('public sharing', () => {
 
     await request(app).get(`/api/share/${draft.id}`).expect(404);
 
-    await draft.update({ status: 'ready', videoUrl: '/uploads/videos/x.mp4' });
+    const shareToken = '11111111-1111-4111-8111-111111111111';
+    await draft.update({
+      status: 'ready',
+      videoUrl: '/uploads/videos/x.mp4',
+      shareToken,
+    });
 
-    const response = await request(app).get(`/api/share/${draft.id}`).expect(200);
+    // The story's own id never resolves — only its (separate) share token does.
+    await request(app).get(`/api/share/${draft.id}`).expect(404);
+
+    const response = await request(app).get(`/api/share/${shareToken}`).expect(200);
     expect(response.body.data.story.videoUrl).toBe('/uploads/videos/x.mp4');
     expect(JSON.stringify(response.body)).not.toContain(userId);
+  });
+
+  it('rotating the share link kills the old one and mints a working new one (S6)', async () => {
+    const { token, userId } = await registerUser(app);
+    const template = await seedTemplate(models);
+    const oldToken = '22222222-2222-4222-8222-222222222222';
+
+    const story = await models.Story.create({
+      userId,
+      title: 'Готовая история',
+      templateId: template.id,
+      status: 'ready',
+      tone: 'warm',
+      voiceGender: 'female',
+      videoUrl: '/uploads/videos/x.mp4',
+      shareToken: oldToken,
+      publicUrl: `http://localhost/share/${oldToken}`,
+    });
+
+    await request(app).get(`/api/share/${oldToken}`).expect(200);
+
+    const rotated = await request(app)
+      .post(`/api/stories/${story.id}/share/rotate`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    const newUrl: string = rotated.body.data.publicUrl;
+    const newToken = newUrl.split('/').pop();
+    expect(newToken).not.toBe(oldToken);
+
+    await request(app).get(`/api/share/${oldToken}`).expect(404);
+    await request(app).get(`/api/share/${newToken}`).expect(200);
+  });
+
+  it('revoking the share link disables it until the link is regenerated (S6)', async () => {
+    const { token, userId } = await registerUser(app);
+    const template = await seedTemplate(models);
+    const shareToken = '33333333-3333-4333-8333-333333333333';
+
+    const story = await models.Story.create({
+      userId,
+      title: 'Готовая история',
+      templateId: template.id,
+      status: 'ready',
+      tone: 'warm',
+      voiceGender: 'female',
+      videoUrl: '/uploads/videos/x.mp4',
+      shareToken,
+      publicUrl: `http://localhost/share/${shareToken}`,
+    });
+
+    await request(app).get(`/api/share/${shareToken}`).expect(200);
+
+    await request(app)
+      .delete(`/api/stories/${story.id}/share`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    await request(app).get(`/api/share/${shareToken}`).expect(404);
+    await story.reload();
+    expect(story.publicUrl).toBeNull();
+    expect(story.shareToken).toBeNull();
+  });
+
+  it('hides ownership of the share controls behind a 404, like every other story route', async () => {
+    const owner = await registerUser(app);
+    const stranger = await registerUser(app);
+    const template = await seedTemplate(models);
+
+    const story = await models.Story.create({
+      userId: owner.userId,
+      title: 'Готовая история',
+      templateId: template.id,
+      status: 'ready',
+      tone: 'warm',
+      voiceGender: 'female',
+      videoUrl: '/uploads/videos/x.mp4',
+    });
+
+    await request(app)
+      .post(`/api/stories/${story.id}/share/rotate`)
+      .set('Authorization', `Bearer ${stranger.token}`)
+      .expect(404);
+
+    await request(app)
+      .delete(`/api/stories/${story.id}/share`)
+      .set('Authorization', `Bearer ${stranger.token}`)
+      .expect(404);
   });
 });
 

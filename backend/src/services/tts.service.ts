@@ -80,12 +80,12 @@ export class TTSService {
       });
       logger.info(
         { model: config.tts.model, endpoint: config.openai.baseUrl || 'api.openai.com' },
-        'TTS: speech synthesis enabled'
+        'TTS: speech synthesis enabled',
       );
     } else {
       logger.warn(
         { service: config.tts.service, hasKey: Boolean(config.openai.apiKey) },
-        'TTS: no API key configured — video will be rendered with a SILENT track'
+        'TTS: no API key configured — video will be rendered with a SILENT track',
       );
     }
   }
@@ -106,7 +106,7 @@ export class TTSService {
   async synthesizeSlides(
     slides: Array<{ orderIndex: number; caption: string; durationSeconds: number }>,
     voice: 'male' | 'female',
-    emotion?: string
+    emotion?: string,
   ): Promise<SlideNarrationResult> {
     const narrations: SlideNarration[] = [];
 
@@ -115,7 +115,7 @@ export class TTSService {
       // Keep the template timings and let the caller see isSpeech === false.
       logger.info(
         { slides: slides.length },
-        'TTS: synthesis unavailable — producing a silent track for every slide'
+        'TTS: synthesis unavailable — producing a silent track for every slide',
       );
     }
 
@@ -140,7 +140,7 @@ export class TTSService {
         const message = error instanceof Error ? error.message : 'Unknown error';
         logger.error(
           { orderIndex: slide.orderIndex, error: message },
-          'TTS: slide synthesis failed, substituting silence for this slide'
+          'TTS: slide synthesis failed, substituting silence for this slide',
         );
         const silence = await this.writeSilence(slide.durationSeconds);
         narrations.push({
@@ -162,7 +162,7 @@ export class TTSService {
         seconds = this.estimateDurationSeconds(caption);
         logger.warn(
           { orderIndex: slide.orderIndex, error: message, estimatedSeconds: seconds },
-          'TTS: could not measure audio (is ffprobe installed?) — keeping speech, using an estimate'
+          'TTS: could not measure audio (is ffprobe installed?) — keeping speech, using an estimate',
         );
       }
 
@@ -186,13 +186,13 @@ export class TTSService {
     const totalDurationSeconds = narrations.reduce((sum, n) => sum + n.durationSeconds, 0);
 
     // One track for the render step, in slide order.
-    const trackPath = path.join(
-      this.audioDir(),
-      `story-track-${crypto.randomUUID()}.m4a`
-    );
+    const trackPath = path.join(this.audioDir(), `story-track-${crypto.randomUUID()}.m4a`);
 
     try {
-      await concatAudioFiles(narrations.map((n) => n.audioPath), trackPath);
+      await concatAudioFiles(
+        narrations.map((n) => n.audioPath),
+        trackPath,
+      );
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       logger.error({ error: message }, 'TTS: failed to concatenate narration track');
@@ -222,7 +222,7 @@ export class TTSService {
 
     const filePath = await this.synthesizeToFile(text, voice, emotion);
     const durationSeconds = await probeDurationSeconds(filePath).catch(() =>
-      this.estimateDurationSeconds(text)
+      this.estimateDurationSeconds(text),
     );
 
     return {
@@ -258,7 +258,7 @@ export class TTSService {
   private async synthesizeToFile(
     text: string,
     voice: 'male' | 'female',
-    emotion?: string
+    emotion?: string,
   ): Promise<string> {
     if (!this.client) throw new Error('TTS client is not configured');
 
@@ -266,7 +266,7 @@ export class TTSService {
     if (input.length > MAX_INPUT_CHARS) {
       logger.warn(
         { length: input.length, limit: MAX_INPUT_CHARS },
-        'TTS: input exceeds the provider limit, truncating'
+        'TTS: input exceeds the provider limit, truncating',
       );
       input = input.slice(0, MAX_INPUT_CHARS);
     }
@@ -311,7 +311,7 @@ export class TTSService {
     await fs.writeFile(filePath, buffer);
     logger.info(
       { voice: resolvedVoice, chars: input.length, bytes: buffer.length },
-      'TTS: line synthesised'
+      'TTS: line synthesised',
     );
 
     return filePath;

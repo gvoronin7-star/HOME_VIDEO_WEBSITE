@@ -12,9 +12,15 @@ interface VoiceProfileAttributes {
   updatedAt: Date;
 }
 
-interface VoiceProfileCreationAttributes extends Optional<VoiceProfileAttributes, 'id' | 'createdAt' | 'updatedAt' | 'previewUrl'> {}
+type VoiceProfileCreationAttributes = Optional<
+  VoiceProfileAttributes,
+  'id' | 'createdAt' | 'updatedAt' | 'previewUrl'
+>;
 
-export class VoiceProfile extends Model<VoiceProfileAttributes, VoiceProfileCreationAttributes> implements VoiceProfileAttributes {
+export class VoiceProfile
+  extends Model<VoiceProfileAttributes, VoiceProfileCreationAttributes>
+  implements VoiceProfileAttributes
+{
   public id!: string;
   public name!: string;
   public gender!: 'male' | 'female';
@@ -68,7 +74,7 @@ VoiceProfile.init(
     sequelize,
     tableName: 'voice_profiles',
     timestamps: true,
-  }
+  },
 );
 
 export default VoiceProfile;

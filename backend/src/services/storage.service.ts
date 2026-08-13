@@ -25,7 +25,7 @@ export class StorageService {
   async saveFile(
     buffer: Buffer,
     originalName: string,
-    category: 'photos' | 'videos' | 'pdfs' | 'qrcodes' | 'audio' | 'temp'
+    category: 'photos' | 'videos' | 'pdfs' | 'qrcodes' | 'audio' | 'temp',
   ): Promise<{ url: string; key: string }> {
     const ext = path.extname(originalName) || '.jpg';
     const key = `${uuidv4()}${ext}`;

@@ -1,12 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger';
 
-export interface AppError extends Error {
-  statusCode?: number;
-  isOperational?: boolean;
-}
-
 export class AppError extends Error {
+  public statusCode: number;
+  public isOperational: boolean;
+
   constructor(message: string, statusCode: number = 500) {
     super(message);
     this.statusCode = statusCode;
@@ -19,7 +17,10 @@ export const errorHandler = (
   err: AppError,
   req: Request,
   res: Response,
-  next: NextFunction
+  // Express only recognises this as error-handling middleware (as opposed to
+  // a regular one) if it takes exactly 4 parameters — `next` has to stay even
+  // though it's never called.
+  _next: NextFunction,
 ) => {
   const statusCode = err.statusCode || 500;
   const message = err.isOperational ? err.message : 'Внутренняя ошибка сервера';

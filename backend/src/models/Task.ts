@@ -2,7 +2,8 @@ import { DataTypes, Model, Optional } from 'sequelize';
 import sequelize from './sequelize';
 import { Story } from './Story';
 
-type TaskType = 'generate_script' | 'generate_tts' | 'render_video' | 'generate_pdf' | 'generate_qr';
+type TaskType =
+  'generate_script' | 'generate_tts' | 'render_video' | 'generate_pdf' | 'generate_qr';
 type TaskStatus = 'pending' | 'queued' | 'processing' | 'completed' | 'failed';
 
 interface TaskAttributes {
@@ -17,7 +18,10 @@ interface TaskAttributes {
   completedAt: Date | null;
 }
 
-interface TaskCreationAttributes extends Optional<TaskAttributes, 'id' | 'createdAt' | 'completedAt' | 'errorMessage' | 'progress' | 'resultData'> {}
+type TaskCreationAttributes = Optional<
+  TaskAttributes,
+  'id' | 'createdAt' | 'completedAt' | 'errorMessage' | 'progress' | 'resultData'
+>;
 
 export class Task extends Model<TaskAttributes, TaskCreationAttributes> implements TaskAttributes {
   public id!: string;
@@ -47,7 +51,13 @@ Task.init(
       },
     },
     type: {
-      type: DataTypes.ENUM('generate_script', 'generate_tts', 'render_video', 'generate_pdf', 'generate_qr'),
+      type: DataTypes.ENUM(
+        'generate_script',
+        'generate_tts',
+        'render_video',
+        'generate_pdf',
+        'generate_qr',
+      ),
       allowNull: false,
     },
     status: {
@@ -80,7 +90,7 @@ Task.init(
     sequelize,
     tableName: 'tasks',
     timestamps: false,
-  }
+  },
 );
 
 export default Task;

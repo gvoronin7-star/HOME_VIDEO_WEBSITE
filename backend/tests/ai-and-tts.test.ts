@@ -27,7 +27,11 @@ function chatReply(payload: unknown) {
     created: 1,
     model: 'gpt-4o-mini',
     choices: [
-      { index: 0, message: { role: 'assistant', content: JSON.stringify(payload) }, finish_reason: 'stop' },
+      {
+        index: 0,
+        message: { role: 'assistant', content: JSON.stringify(payload) },
+        finish_reason: 'stop',
+      },
     ],
     usage: {},
   };
@@ -54,25 +58,38 @@ beforeAll(async () => {
 
       const send = (code: number, body: unknown) => {
         const text = JSON.stringify(body);
-        res.writeHead(code, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(text) });
+        res.writeHead(code, {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(text),
+        });
         res.end(text);
       };
 
       const chatCalls = recorded.filter((entry) => entry.url.includes('/chat/completions')).length;
 
       if (llmMode === 'valid') {
-        send(200, chatReply({
-          title: 'Заголовок от модели',
-          fullText: 'Полный текст сценария.',
-          slides: [{ orderIndex: 0, caption: 'Фраза от модели.', durationSeconds: 5 }],
-        }));
+        send(
+          200,
+          chatReply({
+            title: 'Заголовок от модели',
+            fullText: 'Полный текст сценария.',
+            slides: [{ orderIndex: 0, caption: 'Фраза от модели.', durationSeconds: 5 }],
+          }),
+        );
       } else if (llmMode === 'malformed') {
         // Valid JSON, wrong shape. This used to throw a TypeError that the
         // catch-all turned into a silent template substitution.
         send(200, chatReply({ headline: 'oops', frames: 'not-an-array' }));
       } else if (llmMode === 'rate-limited-then-ok') {
         if (chatCalls <= 2) send(429, { error: { message: 'Rate limit reached' } });
-        else send(200, chatReply({ title: 'После повторов', slides: [{ orderIndex: 0, caption: 'Получилось.' }] }));
+        else
+          send(
+            200,
+            chatReply({
+              title: 'После повторов',
+              slides: [{ orderIndex: 0, caption: 'Получилось.' }],
+            }),
+          );
       } else {
         send(500, { error: { message: 'boom' } });
       }
@@ -154,7 +171,11 @@ describe('script generation (C6)', () => {
 
 describe('speech synthesis (F1)', () => {
   const slides = [
-    { orderIndex: 0, caption: 'Как тепло на душе, когда смотришь на эти кадры.', durationSeconds: 4 },
+    {
+      orderIndex: 0,
+      caption: 'Как тепло на душе, когда смотришь на эти кадры.',
+      durationSeconds: 4,
+    },
     { orderIndex: 1, caption: 'Особенный момент, который хочется помнить.', durationSeconds: 4 },
     { orderIndex: 2, caption: '', durationSeconds: 3 },
   ];
@@ -192,7 +213,7 @@ describe('speech synthesis (F1)', () => {
     await ttsService.synthesizeSlides(
       [{ orderIndex: 0, caption: `Реплика для ${gender} ${mood}.`, durationSeconds: 4 }],
       gender as 'male' | 'female',
-      mood
+      mood,
     );
 
     const speech = recorded.filter((entry) => entry.url.includes('/audio/speech'));
@@ -213,7 +234,7 @@ describe('speech synthesis (F1)', () => {
     const result = await ttsService.synthesizeSlides(
       [{ orderIndex: 0, caption: 'Короткая фраза.', durationSeconds: 9 }],
       'female',
-      'warm'
+      'warm',
     );
 
     // A manual "show this longer" must be honoured; a manual "show it for 2s"

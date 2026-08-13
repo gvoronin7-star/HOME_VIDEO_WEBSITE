@@ -52,7 +52,9 @@ describe('rate limiting (S3)', () => {
     expect(response.status).toBe(429);
     expect(response.body.success).toBe(false);
     expect(response.body.error.message).toBeTypeOf('string');
-    expect(Object.keys(response.headers).some((header) => header.startsWith('ratelimit'))).toBe(true);
+    expect(Object.keys(response.headers).some((header) => header.startsWith('ratelimit'))).toBe(
+      true,
+    );
   });
 
   it('throttles bulk registration separately from login', async () => {

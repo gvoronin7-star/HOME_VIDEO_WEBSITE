@@ -28,6 +28,7 @@ const storyIdParams = z.object({
  * the filtergraph — so the ban was lifted: it blocked ordinary punctuation
  * (quotation marks, apostrophes) that narration legitimately needs.
  */
+// eslint-disable-next-line no-control-regex -- matching control characters is the point of this regex, not an accident
 const CONTROL_CHARS = new RegExp('[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]');
 
 const updateSlidesSchema = z.object({
@@ -52,7 +53,7 @@ const updateSlidesSchema = z.object({
             .min(1, 'Минимум 1 секунда')
             .max(30, 'Максимум 30 секунд'),
           isKeyFrame: z.boolean(),
-        })
+        }),
       )
       .min(1, 'Нужен хотя бы один кадр')
       .max(config.limits.maxPhotos, `Не больше ${config.limits.maxPhotos} кадров`),
@@ -67,7 +68,7 @@ router.post(
   '/',
   generationLimiter,
   uploadPhotos.array('photos', config.limits.maxPhotos),
-  storyController.create
+  storyController.create,
 );
 
 // Get all stories for user
@@ -88,6 +89,12 @@ router.post('/:id/generate', generationLimiter, validate(storyIdSchema), storyCo
 
 // Quick preview of the first few slides, rendered without narration
 router.post('/:id/preview', generationLimiter, validate(storyIdSchema), storyController.preview);
+
+// Rotate the public share link + QR code, invalidating the previous one
+router.post('/:id/share/rotate', validate(storyIdSchema), storyController.rotateShareLink);
+
+// Disable public sharing outright
+router.delete('/:id/share', validate(storyIdSchema), storyController.revokeShareLink);
 
 // Delete story
 router.delete('/:id', validate(storyIdSchema), storyController.delete);

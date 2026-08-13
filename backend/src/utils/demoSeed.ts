@@ -107,7 +107,7 @@ async function demoSeed(): Promise<void> {
     if (!template) {
       logger.warn(
         { template: demo.templateName },
-        'Template missing — run the reference seed first (node dist/utils/seed.js)'
+        'Template missing — run the reference seed first (node dist/utils/seed.js)',
       );
       continue;
     }
@@ -134,7 +134,7 @@ async function demoSeed(): Promise<void> {
       const buffer = await generatePhoto(
         demo.colors[i % demo.colors.length],
         demo.colors[(i + 1) % demo.colors.length],
-        `${demo.title} — кадр ${i + 1}`
+        `${demo.title} — кадр ${i + 1}`,
       );
 
       const { url, key } = await storageService.saveFile(buffer, `demo-${i}.jpg`, 'photos');
@@ -155,7 +155,7 @@ async function demoSeed(): Promise<void> {
 
   logger.info(
     { email: DEMO_EMAIL, password: DEMO_PASSWORD },
-    'Demo data ready — sign in with these credentials'
+    'Demo data ready — sign in with these credentials',
   );
 }
 

@@ -43,7 +43,7 @@ export class PDFService {
           const { url, key } = await storageService.saveFile(
             pdfBuffer,
             `${title.replace(/[^a-zA-Zа-яА-Я0-9]/g, '_')}.pdf`,
-            'pdfs'
+            'pdfs',
           );
           logger.info({ pdfUrl: url }, 'PDF album generated');
           resolve({ pdfUrl: url, key });
@@ -83,10 +83,10 @@ export class PDFService {
             // Add caption
             doc.moveDown(8);
             doc.fontSize(16).font('Helvetica');
-            doc.text(
-              `${slide.orderIndex + 1}. ${slide.caption}`,
-              { align: 'center', width: pageWidth - 100 }
-            );
+            doc.text(`${slide.orderIndex + 1}. ${slide.caption}`, {
+              align: 'center',
+              width: pageWidth - 100,
+            });
           }
         } catch (error: any) {
           logger.warn({ error: error.message }, 'Failed to add image to PDF');
@@ -113,7 +113,7 @@ export class PDFService {
             valign: 'center',
           });
         } catch (error: any) {
-          logger.warn('Failed to add QR code to PDF');
+          logger.warn({ error: error?.message }, 'Failed to add QR code to PDF');
         }
       }
 

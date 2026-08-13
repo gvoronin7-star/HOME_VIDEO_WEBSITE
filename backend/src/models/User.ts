@@ -10,7 +10,7 @@ interface UserAttributes {
   updatedAt: Date;
 }
 
-interface UserCreationAttributes extends Optional<UserAttributes, 'id' | 'createdAt' | 'updatedAt'> {}
+type UserCreationAttributes = Optional<UserAttributes, 'id' | 'createdAt' | 'updatedAt'>;
 
 export class User extends Model<UserAttributes, UserCreationAttributes> implements UserAttributes {
   public id!: string;
@@ -60,7 +60,7 @@ User.init(
     sequelize,
     tableName: 'users',
     timestamps: true,
-  }
+  },
 );
 
 export default User;

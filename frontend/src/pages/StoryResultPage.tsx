@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { api } from '../services/api';
 import { Story, StorySlide, Task } from '../types';
@@ -45,14 +45,6 @@ export default function StoryResultPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      navigate('/login');
-      return;
-    }
-    loadStory();
-  }, [id, isAuthenticated, navigate]);
-
   const loadStory = async () => {
     if (!id) return;
     try {
@@ -63,7 +55,7 @@ export default function StoryResultPage() {
         if (!editing) setDraft(sortedSlides(res.data.story));
         return editing;
       });
-    } catch (error: any) {
+    } catch {
       toast.error('История не найдена');
       navigate('/stories');
     } finally {
@@ -71,9 +63,23 @@ export default function StoryResultPage() {
     }
   };
 
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/login');
+      return;
+    }
+    loadStory();
+  }, [id, isAuthenticated, navigate]);
+
   // Poll while work is in flight. 'draft' is included because creating a story
   // kicks off script generation in the background — without it a page opened
   // right after creation would never learn that the script arrived.
+  //
+  // Deliberately depends only on [story?.id, story?.status], not on `loadStory`
+  // or `story` itself: the interval body reads the latest `story` via the
+  // setStory updater below, and a full `story` dependency would tear down and
+  // restart the interval on every poll response (the response *is* a new
+  // `story` object), never letting it run for its full 3s.
   useEffect(() => {
     if (!story || !POLLED_STATUSES.includes(story.status)) {
       return;
@@ -112,7 +118,7 @@ export default function StoryResultPage() {
     setIsGenerating(true);
     try {
       await api.generateStory(story.id);
-      setStory((prev) => prev ? { ...prev, status: 'script_generating' } : null);
+      setStory((prev) => (prev ? { ...prev, status: 'script_generating' } : null));
       setTask(null);
       toast.success('Генерация запущена!');
     } catch (error: any) {
@@ -141,7 +147,7 @@ export default function StoryResultPage() {
 
   const toggleKeyFrame = (slideId: string) => {
     setDraft((prev) =>
-      prev.map((s) => (s.id === slideId ? { ...s, isKeyFrame: !s.isKeyFrame } : s))
+      prev.map((s) => (s.id === slideId ? { ...s, isKeyFrame: !s.isKeyFrame } : s)),
     );
   };
 
@@ -173,7 +179,7 @@ export default function StoryResultPage() {
           caption: s.caption || '',
           durationSeconds: s.durationSeconds,
           isKeyFrame: s.isKeyFrame,
-        }))
+        })),
       );
       setStory((prev) => (prev ? { ...prev, slides: draft } : null));
       return true;
@@ -182,7 +188,7 @@ export default function StoryResultPage() {
       toast.error(
         details?.[0]?.message ||
           error.response?.data?.error?.message ||
-          'Не удалось сохранить сценарий'
+          'Не удалось сохранить сценарий',
       );
       return false;
     } finally {
@@ -233,6 +239,32 @@ export default function StoryResultPage() {
     if (story?.publicUrl) {
       navigator.clipboard.writeText(story.publicUrl);
       toast.success('Ссылка скопирована!');
+    }
+  };
+
+  const handleRotateShareLink = async () => {
+    if (!story) return;
+    if (!confirm('Старая ссылка и QR-код перестанут работать. Создать новые?')) return;
+    try {
+      const res = await api.rotateShareLink(story.id);
+      setStory((prev) =>
+        prev ? { ...prev, publicUrl: res.data.publicUrl, qrCodeUrl: res.data.qrCodeUrl } : null,
+      );
+      toast.success('Ссылка обновлена, старая больше не работает');
+    } catch {
+      toast.error('Не удалось обновить ссылку');
+    }
+  };
+
+  const handleRevokeShareLink = async () => {
+    if (!story) return;
+    if (!confirm('Публичная ссылка и QR-код перестанут работать. Отключить доступ?')) return;
+    try {
+      await api.revokeShareLink(story.id);
+      setStory((prev) => (prev ? { ...prev, publicUrl: null, qrCodeUrl: null } : null));
+      toast.success('Публичный доступ отключён');
+    } catch {
+      toast.error('Не удалось отключить доступ');
     }
   };
 
@@ -341,11 +373,7 @@ export default function StoryResultPage() {
 
               {/* Full render takes minutes; this shows the first 4 frames in seconds. */}
               {canEdit && (
-                <button
-                  onClick={handlePreview}
-                  disabled={isPreviewing}
-                  className="btn btn-outline"
-                >
+                <button onClick={handlePreview} disabled={isPreviewing} className="btn btn-outline">
                   {isPreviewing ? 'Собираем превью...' : '⚡ Быстрое превью'}
                 </button>
               )}
@@ -481,11 +509,7 @@ export default function StoryResultPage() {
                   >
                     {isSaving || isGenerating ? 'Запускаем...' : '💾 Сохранить и пересобрать видео'}
                   </button>
-                  <button
-                    onClick={cancelEditing}
-                    disabled={isSaving}
-                    className="btn btn-block"
-                  >
+                  <button onClick={cancelEditing} disabled={isSaving} className="btn btn-block">
                     Отменить
                   </button>
                 </div>
@@ -529,7 +553,18 @@ export default function StoryResultPage() {
                   >
                     ✈️ Отправить в Telegram
                   </a>
+                  <button onClick={handleRotateShareLink} className="btn btn-outline btn-block">
+                    🔄 Обновить ссылку (старая перестанет работать)
+                  </button>
+                  <button onClick={handleRevokeShareLink} className="btn btn-outline btn-block">
+                    🚫 Отключить публичный доступ
+                  </button>
                 </div>
+              )}
+              {!story.publicUrl && story.status === 'ready' && (
+                <button onClick={handleRotateShareLink} className="btn btn-outline btn-block">
+                  🔗 Включить публичный доступ
+                </button>
               )}
             </div>
           </section>

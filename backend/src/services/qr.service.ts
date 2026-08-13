@@ -12,7 +12,7 @@ export class QRService {
       width?: number;
       margin?: number;
       color?: { dark?: string; light?: string };
-    }
+    },
   ): Promise<{ imageUrl: string; key: string }> {
     try {
       const qrBuffer = await QRCode.toBuffer(data, {
@@ -25,17 +25,13 @@ export class QRService {
         },
       });
 
-      const { url, key } = await storageService.saveFile(
-        qrBuffer,
-        'qrcode.png',
-        'qrcodes'
-      );
+      const { url, key } = await storageService.saveFile(qrBuffer, 'qrcode.png', 'qrcodes');
 
       logger.info({ data: data.substring(0, 50) }, 'QR code generated');
       return { imageUrl: url, key };
     } catch (error: any) {
       logger.error({ error: error.message }, 'Failed to generate QR code');
-      throw new Error('QR code generation failed');
+      throw new Error('QR code generation failed', { cause: error });
     }
   }
 
@@ -52,7 +48,7 @@ export class QRService {
       return svgString;
     } catch (error: any) {
       logger.error({ error: error.message }, 'Failed to generate QR code SVG');
-      throw new Error('QR code SVG generation failed');
+      throw new Error('QR code SVG generation failed', { cause: error });
     }
   }
 }

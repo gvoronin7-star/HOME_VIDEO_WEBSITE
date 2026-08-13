@@ -1,15 +1,19 @@
 import sequelize from '../models/sequelize';
 import '../models'; // Register models and associations before syncing
 import { logger } from './logger';
+import { umzug } from '../migrations/runner';
 
 /**
  * Schema initialisation. Runs as an explicit deploy step and must be safe to
- * repeat, so it only creates missing tables and never alters existing ones —
- * `alter: true` rewrites live columns and fails on repeat runs against
- * PostgreSQL ENUM types.
+ * repeat.
  *
- * NOTE: this is not a migration system. Changes to existing columns still
- * require versioned migrations (see PROPOSALS.md).
+ * Two mechanisms, in order, for two different jobs:
+ * - `sequelize.sync()` creates tables that don't exist yet. Safe to repeat,
+ *   but it never alters an existing table — `alter: true` rewrites live
+ *   columns and fails on repeat runs against PostgreSQL ENUM types.
+ * - `umzug.up()` (src/migrations/) applies versioned changes to tables that
+ *   already exist, tracked in a `SequelizeMeta` table so each migration runs
+ *   at most once. This is what changing an existing column now uses.
  */
 async function migrate() {
   try {
@@ -18,6 +22,9 @@ async function migrate() {
 
     await sequelize.sync();
     logger.info('Schema initialised - all tables present');
+
+    const applied = await umzug.up();
+    logger.info({ applied: applied.map((m) => m.name) }, 'Versioned migrations applied');
 
     process.exit(0);
   } catch (error: any) {

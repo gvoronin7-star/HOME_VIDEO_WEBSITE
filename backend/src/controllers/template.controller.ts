@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { Template } from '../models';
-import { logger } from '../utils/logger';
 import { bindAll } from '../utils/bindAll';
 
 export class TemplateController {
@@ -36,7 +35,14 @@ export class TemplateController {
   async getById(req: Request, res: Response, next: NextFunction) {
     try {
       const template = await Template.findByPk(req.params.id, {
-        attributes: ['id', 'name', 'description', 'tone', 'defaultDurationSeconds', 'promptTemplate'],
+        attributes: [
+          'id',
+          'name',
+          'description',
+          'tone',
+          'defaultDurationSeconds',
+          'promptTemplate',
+        ],
       });
 
       if (!template) {

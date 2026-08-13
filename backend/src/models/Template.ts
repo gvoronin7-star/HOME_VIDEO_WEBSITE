@@ -1,6 +1,5 @@
 import { DataTypes, Model, Optional } from 'sequelize';
 import sequelize from './sequelize';
-import { User } from './User';
 
 interface TemplateAttributes {
   id: string;
@@ -13,9 +12,12 @@ interface TemplateAttributes {
   updatedAt: Date;
 }
 
-interface TemplateCreationAttributes extends Optional<TemplateAttributes, 'id' | 'createdAt' | 'updatedAt'> {}
+type TemplateCreationAttributes = Optional<TemplateAttributes, 'id' | 'createdAt' | 'updatedAt'>;
 
-export class Template extends Model<TemplateAttributes, TemplateCreationAttributes> implements TemplateAttributes {
+export class Template
+  extends Model<TemplateAttributes, TemplateCreationAttributes>
+  implements TemplateAttributes
+{
   public id!: string;
   public name!: string;
   public description!: string;
@@ -68,7 +70,7 @@ Template.init(
     sequelize,
     tableName: 'templates',
     timestamps: true,
-  }
+  },
 );
 
 export default Template;

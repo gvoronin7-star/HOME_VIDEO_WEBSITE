@@ -25,35 +25,42 @@ export default function CreateStoryPage() {
       navigate('/login');
       return;
     }
-    api.getTemplates().then((res) => {
-      setTemplates(res.data.templates);
-      if (res.data.templates.length > 0) {
-        setSelectedTemplate(res.data.templates[0].id);
-      }
-    }).catch(() => toast.error('Не удалось загрузить шаблоны'));
+    api
+      .getTemplates()
+      .then((res) => {
+        setTemplates(res.data.templates);
+        if (res.data.templates.length > 0) {
+          setSelectedTemplate(res.data.templates[0].id);
+        }
+      })
+      .catch(() => toast.error('Не удалось загрузить шаблоны'));
 
     // Voice profiles are optional garnish — a failure here must not block creation.
-    api.getVoices()
+    api
+      .getVoices()
       .then((res) => setVoices(res.data.voices))
       .catch(() => setVoices([]));
   }, [isAuthenticated, navigate]);
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    const newFiles = acceptedFiles.map((file, i) => ({
-      id: `file-${Date.now()}-${i}`,
-      file,
-      preview: URL.createObjectURL(file),
-      orderIndex: files.length + i,
-      isKeyFrame: files.length + i === 0,
-    }));
+  const onDrop = useCallback(
+    (acceptedFiles: File[]) => {
+      const newFiles = acceptedFiles.map((file, i) => ({
+        id: `file-${Date.now()}-${i}`,
+        file,
+        preview: URL.createObjectURL(file),
+        orderIndex: files.length + i,
+        isKeyFrame: files.length + i === 0,
+      }));
 
-    if (files.length + newFiles.length > 20) {
-      toast.error('Максимум 20 фото');
-      return;
-    }
+      if (files.length + newFiles.length > 20) {
+        toast.error('Максимум 20 фото');
+        return;
+      }
 
-    setFiles((prev) => [...prev, ...newFiles]);
-  }, [files.length]);
+      setFiles((prev) => [...prev, ...newFiles]);
+    },
+    [files.length],
+  );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -82,9 +89,7 @@ export default function CreateStoryPage() {
   };
 
   const toggleKeyFrame = (id: string) => {
-    setFiles((prev) =>
-      prev.map((f) => (f.id === id ? { ...f, isKeyFrame: !f.isKeyFrame } : f))
-    );
+    setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, isKeyFrame: !f.isKeyFrame } : f)));
   };
 
   const handleSubmit = async () => {
@@ -121,7 +126,9 @@ export default function CreateStoryPage() {
   return (
     <div className="create-story-page">
       <h1 className="page-title">Создать историю</h1>
-      <p className="page-subtitle">Шаг 1: Загрузите фото → Шаг 2: Выберите шаблон → Шаг 3: Получите видео</p>
+      <p className="page-subtitle">
+        Шаг 1: Загрузите фото → Шаг 2: Выберите шаблон → Шаг 3: Получите видео
+      </p>
 
       <div className="create-layout">
         <div className="create-main">
@@ -130,7 +137,10 @@ export default function CreateStoryPage() {
             <h2>📸 Загрузите фотографии</h2>
             <p className="section-hint">До 20 фото. JPG, PNG, WebP. До 10 МБ на файл.</p>
 
-            <div {...getRootProps()} className={`dropzone ${isDragActive ? 'dropzone-active' : ''}`}>
+            <div
+              {...getRootProps()}
+              className={`dropzone ${isDragActive ? 'dropzone-active' : ''}`}
+            >
               <input {...getInputProps()} />
               {isDragActive ? (
                 <p>Отпустите фото для загрузки...</p>
@@ -146,7 +156,9 @@ export default function CreateStoryPage() {
               <div className="photo-grid">
                 {files.map((file, index) => (
                   <div key={file.id} className="photo-card">
-                    <div className="photo-order" aria-hidden="true">{index + 1}</div>
+                    <div className="photo-order" aria-hidden="true">
+                      {index + 1}
+                    </div>
                     <img
                       src={file.preview}
                       alt={`Загруженное фото ${index + 1} из ${files.length}: ${file.file.name}`}

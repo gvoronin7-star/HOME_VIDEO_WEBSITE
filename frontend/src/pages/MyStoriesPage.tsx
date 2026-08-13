@@ -11,6 +11,17 @@ export default function MyStoriesPage() {
   const [stories, setStories] = useState<Story[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  const loadStories = async () => {
+    try {
+      const res = await api.getStories();
+      setStories(res.data.stories);
+    } catch {
+      toast.error('Не удалось загрузить истории');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/login');
@@ -18,17 +29,6 @@ export default function MyStoriesPage() {
     }
     loadStories();
   }, [isAuthenticated, navigate]);
-
-  const loadStories = async () => {
-    try {
-      const res = await api.getStories();
-      setStories(res.data.stories);
-    } catch (error: any) {
-      toast.error('Не удалось загрузить истории');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const statusLabels: Record<string, { text: string; color: string }> = {
     draft: { text: 'Черновик', color: '#6b7280' },

@@ -50,7 +50,7 @@ async function deleteStoryWithFiles(story: any): Promise<number> {
  * only firing on a timer nobody can observe.
  */
 export async function runRetentionSweep(
-  retentionDays: number = config.retention.fileDays
+  retentionDays: number = config.retention.fileDays,
 ): Promise<RetentionResult> {
   const result: RetentionResult = { expiredStories: 0, deletedFiles: 0, removedTempEntries: 0 };
 
@@ -82,7 +82,7 @@ export async function runRetentionSweep(
 
   logger.info(
     { ...result, retentionDays, cutoff: cutoff.toISOString() },
-    'Retention sweep completed'
+    'Retention sweep completed',
   );
 
   return result;
@@ -126,7 +126,7 @@ export function startRetentionSchedule(): void {
 
   logger.info(
     { intervalHours, retentionDays: config.retention.fileDays },
-    'Retention schedule started'
+    'Retention schedule started',
   );
 
   // Once shortly after boot: a container that restarts often would otherwise never

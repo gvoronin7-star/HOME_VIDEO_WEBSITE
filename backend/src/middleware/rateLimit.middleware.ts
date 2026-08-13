@@ -18,10 +18,7 @@ import { logger } from '../utils/logger';
 
 /** Shared response shape so clients get the same error contract everywhere. */
 function limitReached(req: Request, res: Response, retryAfterHint: string): void {
-  logger.warn(
-    { ip: req.ip, path: req.path, method: req.method },
-    'Rate limit exceeded'
-  );
+  logger.warn({ ip: req.ip, path: req.path, method: req.method }, 'Rate limit exceeded');
 
   res.status(429).json({
     success: false,

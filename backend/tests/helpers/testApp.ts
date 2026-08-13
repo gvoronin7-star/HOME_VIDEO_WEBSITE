@@ -46,7 +46,7 @@ export async function makeJpeg(label = '#4a6fa5'): Promise<Buffer> {
 /** Register a user through the API and return the bearer token. */
 export async function registerUser(
   app: Express,
-  email = `u-${crypto.randomUUID()}@example.com`
+  email = `u-${crypto.randomUUID()}@example.com`,
 ): Promise<{ token: string; email: string; userId: string }> {
   const request = (await import('supertest')).default;
 

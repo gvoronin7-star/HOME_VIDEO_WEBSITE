@@ -22,8 +22,9 @@ Run from the repository root:
 npm run dev          # backend :4000 and frontend :5173 together
 npm test             # backend test suite
 npm run typecheck    # both packages, including the test suite
+npm run lint         # both packages (ESLint)
 npm run build        # both packages
-npm run ci           # typecheck + test + build, what CI runs
+npm run ci           # typecheck + lint + test + build, what CI runs
 ```
 
 Inside `backend/`:
@@ -124,12 +125,17 @@ when Redis was down. The producer therefore gets finite retries plus `enableOffl
 `enqueueGeneration()` additionally wraps the call in a timeout so the request answers **503** rather
 than holding the connection open. Both connections keep reconnecting in the background.
 
-### Schema lifecycle — there are no migrations
+### Schema lifecycle: `sync()` creates tables, `umzug` alters them
 
 `sequelize.sync()` in development, the `init` compose service in Docker, and in production
 `server.ts` **verifies the required tables exist and exits 1 with the missing list** if they do not.
-`utils/migrate.ts` uses plain `sync()` (create-missing only) so it is safe to re-run; it cannot alter
-existing columns. Changing an existing column needs a real migration tool — that work is still open.
+`utils/migrate.ts` runs plain `sync()` (create-missing only, safe to re-run) and then `umzug.up()`
+(`src/migrations/`, tracked in `SequelizeMeta`) for changes to a table that already exists — `sync()`
+never alters one. A migration only needs to actually run anything on a database that predates the
+column it adds; on a fresh database `sync()` already created it from the current model definition, so
+the migration's `up()` finds the column already there and is a no-op (see the guard in
+`0001-add-story-share-token.ts`). Add new migrations to the explicit list in `migrations/runner.ts`,
+not by dropping a file into the directory — there is no glob-based discovery.
 
 ### Storage keys vs public URLs
 
@@ -137,6 +143,27 @@ The database stores public URLs (`/uploads/videos/x.mp4`) for videos, PDFs and Q
 **keys** (`videos/x.mp4`) for slide images. `storageService.keyFromUrl()` normalises either form, and
 `deleteFile()` accepts both. `utils/storyArtefacts.ts` is the single list of files a story owns —
 shared by the delete endpoint and the retention sweep so the two cannot drift.
+
+### Auth token: cookie for the browser, header for everyone else
+
+`authMiddleware` accepts the JWT from **either** an `Authorization: Bearer` header or an `httpOnly`
+cookie (`utils/authCookie.ts`), header taking priority when both are present. Login/register set the
+cookie *and* still return the token in the JSON body: the frontend (`AuthContext.tsx`) relies only on
+the cookie and never reads `data.token`, but the response keeps it for API clients and the test suite,
+which sign requests with the header. `POST /api/auth/logout` exists only because JS cannot read or
+clear an `httpOnly` cookie itself. The cookie's `secure` flag mirrors `req.secure`, which already
+accounts for `trust proxy` — hardcoding it to `true` would silently stop the cookie being sent on any
+deployment not yet behind TLS.
+
+### Share links are keyed by `shareToken`, never by the story's id
+
+`Story.shareToken` is a separate UUID from the story's primary key, minted the first time a story
+finishes rendering and reused across re-renders (editing slides and generating again must not break a
+link already shared). `buildShareUrl()` and `GET /api/share/:token` both take the token, not the id —
+building the public link from the id would make it impossible to revoke without breaking every foreign
+key that points at the story. `POST /stories/:id/share/rotate` mints a fresh token (killing the old
+link); `DELETE /stories/:id/share` clears it (disabling sharing until a rotate or another full
+generation issues a new one).
 
 ### Retention expires whole stories
 
@@ -187,9 +214,9 @@ layout that `CONTRIBUTING.md` still proposes; that section is out of date, as is
 
 ## CI
 
-`.github/workflows/ci.yml` runs four jobs: backend types/build/tests, frontend types/build, **Docker
-image builds**, and a compose smoke test that waits for `/api/health`, then asserts the schema exists
-and reference data was seeded.
+`.github/workflows/ci.yml` runs four jobs: backend types/lint/build/tests, frontend types/lint/build,
+**Docker image builds**, and a compose smoke test that waits for `/api/health`, then asserts the
+schema exists, reference data was seeded, and renders a real video end to end.
 
 The last two jobs exist because of real incidents that no unit test would have caught: a
 `.dockerignore` entry excluded the frontend `src/` directory so the image could not build at all, and
@@ -203,9 +230,8 @@ ranked suggestions, `PLAN_4_DAYS.md` the execution status and an acceptance chec
 documents in the root, `FS_CURRENT_STATE.md` and `FS_AUDIT_ONE.md`, are **historical and contradict
 the current code** — do not plan from them.
 
-Currently open: versioned migrations, ESLint/Prettier (which `CONTRIBUTING.md` already assumes
-exists), token in `localStorage`, no way to revoke a share link, the worker sharing the API process,
-and `multer.memoryStorage()` holding up to 200 MB per upload.
+Currently open: the worker sharing the API process, and `multer.memoryStorage()` holding up to 200 MB
+per upload.
 
 Unused dependencies still declared: `react-beautiful-dnd` and `qrcode.react` in the frontend,
 `fluent-ffmpeg` in the backend (the project uses its own `spawn` wrapper).

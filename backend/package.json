@@ -15,11 +15,16 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "typecheck:tests": "tsc --noEmit -p tsconfig.test.json"
+    "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "bullmq": "^5.1.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
@@ -38,11 +43,14 @@
     "sequelize": "^6.37.3",
     "sharp": "^0.33.5",
     "sqlite3": "^6.0.1",
+    "umzug": "^3.8.3",
     "uuid": "^9.0.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/bcryptjs": "^2.4.6",
+    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/fluent-ffmpeg": "^2.1.27",
@@ -54,9 +62,13 @@
     "@types/qrcode": "^1.5.5",
     "@types/supertest": "^7.2.1",
     "@types/uuid": "^9.0.8",
+    "eslint": "^10.8.1",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.6",
     "supertest": "^7.2.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.5.4",
+    "typescript-eslint": "^8.67.0",
     "vitest": "^4.1.10"
   }
 }

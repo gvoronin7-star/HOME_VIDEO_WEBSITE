@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { Story, StorySlide, Template, Task } from '../models';
 import { storageService } from '../services/storage.service';
@@ -60,7 +60,7 @@ export class StoryController {
         const { url, key } = await storageService.saveFile(
           optimizedBuffer,
           file.originalname,
-          'photos'
+          'photos',
         );
 
         savedSlides.push({
@@ -97,7 +97,10 @@ export class StoryController {
 
       // Start script generation in background (non-blocking)
       this.generateScript(story.id).catch((err) => {
-        logger.error({ error: err.message, storyId: story.id }, 'Background script generation failed');
+        logger.error(
+          { error: err.message, storyId: story.id },
+          'Background script generation failed',
+        );
       });
 
       res.status(201).json({
@@ -213,7 +216,7 @@ export class StoryController {
             durationSeconds: slideData.durationSeconds,
             isKeyFrame: slideData.isKeyFrame,
           },
-          { where: { id: slideData.id, storyId: story.id } }
+          { where: { id: slideData.id, storyId: story.id } },
         );
       }
 
@@ -277,8 +280,7 @@ export class StoryController {
           taskId: task.id,
         }));
       } catch (queueError: unknown) {
-        const message =
-          queueError instanceof Error ? queueError.message : 'Unknown queue error';
+        const message = queueError instanceof Error ? queueError.message : 'Unknown queue error';
 
         await task.update({
           status: 'failed',
@@ -287,7 +289,7 @@ export class StoryController {
 
         logger.error(
           { storyId: story.id, taskId: task.id, error: message },
-          'Failed to enqueue generation job — queue unavailable'
+          'Failed to enqueue generation job — queue unavailable',
         );
 
         return res.status(503).json({
@@ -345,9 +347,7 @@ export class StoryController {
         });
       }
 
-      const slides = (story.slides || [])
-        .slice()
-        .sort((a, b) => a.orderIndex - b.orderIndex);
+      const slides = (story.slides || []).slice().sort((a, b) => a.orderIndex - b.orderIndex);
 
       if (slides.length === 0) {
         return res.status(409).json({
@@ -397,14 +397,31 @@ export class StoryController {
     try {
       const story = await Story.findOne({
         where: { id: req.params.id, userId: req.user!.id },
-        attributes: ['id', 'status', 'videoUrl', 'pdfUrl', 'qrCodeUrl', 'publicUrl', 'scriptText', 'updatedAt'],
+        attributes: [
+          'id',
+          'status',
+          'videoUrl',
+          'pdfUrl',
+          'qrCodeUrl',
+          'publicUrl',
+          'scriptText',
+          'updatedAt',
+        ],
         include: [
           {
             model: Task,
             as: 'tasks',
             order: [['createdAt', 'DESC']],
             limit: 1,
-            attributes: ['id', 'status', 'progress', 'errorMessage', 'resultData', 'createdAt', 'completedAt'],
+            attributes: [
+              'id',
+              'status',
+              'progress',
+              'errorMessage',
+              'resultData',
+              'createdAt',
+              'completedAt',
+            ],
           },
         ],
       });
@@ -483,6 +500,90 @@ export class StoryController {
       res.json({
         success: true,
         data: { message: 'История удалена' },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/stories/:id/share/rotate
+   * Issue a fresh share link and QR code, invalidating the previous one —
+   * anyone who still has the old link or a printed copy of the old QR code
+   * gets a 404 from `GET /api/share/:token`, since that token no longer
+   * matches any story.
+   */
+  async rotateShareLink(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const story = await Story.findOne({
+        where: { id: req.params.id, userId: req.user!.id },
+      });
+
+      if (!story) {
+        return res.status(404).json({
+          success: false,
+          error: { message: 'История не найдена' },
+        });
+      }
+
+      if (story.status !== 'ready') {
+        return res.status(409).json({
+          success: false,
+          error: { message: 'Ссылка появляется только после готового видео' },
+        });
+      }
+
+      if (story.qrCodeUrl) {
+        await storageService.deleteFile(story.qrCodeUrl, { missingOk: true });
+      }
+
+      const shareToken = uuidv4();
+      const publicUrl = buildShareUrl(shareToken);
+      const qrResult = await qrService.generateQRCode(publicUrl);
+
+      await story.update({ shareToken, publicUrl, qrCodeUrl: qrResult.imageUrl });
+
+      logger.info({ storyId: story.id }, 'Share link rotated');
+
+      res.json({
+        success: true,
+        data: { publicUrl: story.publicUrl, qrCodeUrl: story.qrCodeUrl },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * DELETE /api/stories/:id/share
+   * Disable public sharing outright. The old link and QR code stop resolving
+   * to anything; the story stays private until a rotate (or the next full
+   * generation) issues a new token.
+   */
+  async revokeShareLink(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const story = await Story.findOne({
+        where: { id: req.params.id, userId: req.user!.id },
+      });
+
+      if (!story) {
+        return res.status(404).json({
+          success: false,
+          error: { message: 'История не найдена' },
+        });
+      }
+
+      if (story.qrCodeUrl) {
+        await storageService.deleteFile(story.qrCodeUrl, { missingOk: true });
+      }
+
+      await story.update({ shareToken: null, publicUrl: null, qrCodeUrl: null });
+
+      logger.info({ storyId: story.id }, 'Share link revoked');
+
+      res.json({
+        success: true,
+        data: { message: 'Публичная ссылка отключена' },
       });
     } catch (error) {
       next(error);
@@ -571,7 +672,7 @@ export class StoryController {
         });
         if (ttsResult.audioUrl) {
           audioPath = path.resolve(
-            storageService.getFilePath('audio/' + ttsResult.audioUrl.split('/').pop()!)
+            storageService.getFilePath('audio/' + ttsResult.audioUrl.split('/').pop()!),
           );
         }
       }
@@ -592,7 +693,8 @@ export class StoryController {
       await story.update({ videoUrl: renderResult.videoUrl });
 
       // Step 4: Generate QR code
-      const publicUrl = buildShareUrl(storyId);
+      const shareToken = story.shareToken || uuidv4();
+      const publicUrl = buildShareUrl(shareToken);
       const qrResult = await qrService.generateQRCode(publicUrl);
 
       // Step 5: Generate PDF album
@@ -605,9 +707,7 @@ export class StoryController {
           caption: slide.caption,
           orderIndex: slide.orderIndex,
         })),
-        qrCodePath: qrResult.key
-          ? storageService.getFilePath(qrResult.key)
-          : undefined,
+        qrCodePath: qrResult.key ? storageService.getFilePath(qrResult.key) : undefined,
       });
 
       await story.update({
@@ -615,6 +715,7 @@ export class StoryController {
         pdfUrl: pdfResult.pdfUrl,
         qrCodeUrl: qrResult.imageUrl,
         publicUrl,
+        shareToken,
       });
 
       logger.info({ storyId }, 'Full generation completed successfully');

@@ -19,12 +19,15 @@ export async function probeDurationSeconds(filePath: string): Promise<number> {
   const { stdout } = await execFileAsync(
     probePath,
     [
-      '-v', 'error',
-      '-show_entries', 'format=duration',
-      '-of', 'default=noprint_wrappers=1:nokey=1',
+      '-v',
+      'error',
+      '-show_entries',
+      'format=duration',
+      '-of',
+      'default=noprint_wrappers=1:nokey=1',
       filePath,
     ],
-    { timeout: 15000 }
+    { timeout: 15000 },
   );
 
   const seconds = Number.parseFloat(stdout.trim());
@@ -60,9 +63,21 @@ export async function concatAudioFiles(inputPaths: string[], outputPath: string)
   try {
     await execFileAsync(
       ffmpegPath,
-      ['-y', '-f', 'concat', '-safe', '0', '-i', listPath,
-       '-c:a', 'aac', '-b:a', '128k', outputPath],
-      { timeout: 120000, maxBuffer: 10 * 1024 * 1024 }
+      [
+        '-y',
+        '-f',
+        'concat',
+        '-safe',
+        '0',
+        '-i',
+        listPath,
+        '-c:a',
+        'aac',
+        '-b:a',
+        '128k',
+        outputPath,
+      ],
+      { timeout: 120000, maxBuffer: 10 * 1024 * 1024 },
     );
   } finally {
     await fs.rm(listPath, { force: true }).catch(() => {});
@@ -100,7 +115,7 @@ export function runFfmpeg(
     timeout?: number;
     cwd?: string;
     onProgress?: (progress: number, log: string) => void;
-  } = {}
+  } = {},
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const cmd = config.ffmpeg.path || 'ffmpeg';
@@ -116,7 +131,7 @@ export function runFfmpeg(
     let stdout = '';
     let stderr = '';
     let progress = 0;
-    let startTime = Date.now();
+    const startTime = Date.now();
 
     const timeoutMs = options.timeout || 300000;
     const timer = setTimeout(() => {

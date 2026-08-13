@@ -12,7 +12,12 @@ import path from 'path';
  */
 export function teardown(): void {
   const tmp = os.tmpdir();
-  const prefixes = ['family-cinema-tests-', 'family-cinema-render-', 'family-cinema-startup-', 'family-cinema-empty-'];
+  const prefixes = [
+    'family-cinema-tests-',
+    'family-cinema-render-',
+    'family-cinema-startup-',
+    'family-cinema-empty-',
+  ];
 
   let removed = 0;
   for (const entry of fs.readdirSync(tmp)) {
@@ -26,7 +31,6 @@ export function teardown(): void {
   }
 
   if (removed > 0) {
-    // eslint-disable-next-line no-console
     console.log(`\ncleaned up ${removed} test scratch director${removed === 1 ? 'y' : 'ies'}`);
   }
 }

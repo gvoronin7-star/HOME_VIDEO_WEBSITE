@@ -1,5 +1,6 @@
 import express, { Express } from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import path from 'path';
 import { config } from './config';
@@ -55,19 +56,24 @@ export function createApp(): Express {
       // otherwise, and correct as soon as HTTPS is configured.
       hsts: { maxAge: 31_536_000, includeSubDomains: true },
       referrerPolicy: { policy: 'no-referrer' },
-    })
+    }),
   );
 
   // === Middleware ===
-  app.use(cors({
-    origin: config.server.corsOrigin,
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-  }));
+  app.use(
+    cors({
+      origin: config.server.corsOrigin,
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+    }),
+  );
 
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+  // Unsigned: the JWT it carries is already signed and verified independently
+  // in auth.middleware — a signing secret here would protect nothing extra.
+  app.use(cookieParser());
 
   // Request logging
   app.use((req, res, next) => {
@@ -86,7 +92,7 @@ export function createApp(): Express {
       // because the app plays and displays it directly.
       res.setHeader(
         'Content-Disposition',
-        req.path.toLowerCase().endsWith('.pdf') ? 'attachment' : 'inline'
+        req.path.toLowerCase().endsWith('.pdf') ? 'attachment' : 'inline',
       );
       next();
     },
@@ -99,7 +105,7 @@ export function createApp(): Express {
       setHeaders: (res) => {
         res.setHeader('X-Content-Type-Options', 'nosniff');
       },
-    })
+    }),
   );
 
   // === API Routes ===

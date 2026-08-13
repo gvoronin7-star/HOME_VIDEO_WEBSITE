@@ -10,7 +10,7 @@ import { pdfService } from '../services/pdf.service';
 import { qrService } from '../services/qr.service';
 import { storageService } from '../services/storage.service';
 import { buildShareUrl } from '../utils/urls';
-import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Two Redis connections, on purpose.
@@ -46,7 +46,7 @@ function createConnection(kind: 'producer' | 'worker'): Redis {
     lastErrorLoggedAt = now;
     logger.error(
       { connection: kind, error: err.message || 'Redis connection error' },
-      'Redis connection error'
+      'Redis connection error',
     );
   });
 
@@ -81,15 +81,15 @@ export const generationQueue = new Queue('generation', {
  */
 export async function enqueueGeneration(
   data: GenerationJobData,
-  timeoutMs = 5000
+  timeoutMs = 5000,
 ): Promise<{ jobId: string }> {
   const job = await Promise.race([
     generationQueue.add('generate-story', data, { removeOnFail: 100 }),
     new Promise<never>((_, reject) =>
       setTimeout(
         () => reject(new Error(`Queue did not accept the job within ${timeoutMs}ms`)),
-        timeoutMs
-      )
+        timeoutMs,
+      ),
     ),
   ]);
 
@@ -113,7 +113,7 @@ export interface GenerationJobResult {
 
 async function processStoryGeneration(
   jobId: string,
-  data: GenerationJobData
+  data: GenerationJobData,
 ): Promise<GenerationJobResult> {
   logger.info({ jobId, storyId: data.storyId }, 'Worker: starting story generation');
 
@@ -186,14 +186,13 @@ async function processStoryGeneration(
 
     logger.info(
       { storyId: story.id, scriptSource: script.isFallback ? 'fallback' : 'llm' },
-      'Worker: script generated'
+      'Worker: script generated',
     );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     logger.error({ storyId: story.id, error: message }, 'Worker: script generation failed');
     await story.update({ status: 'error' });
-    if (task)
-      await task.update({ status: 'failed', errorMessage: `Script: ${message}` });
+    if (task) await task.update({ status: 'failed', errorMessage: `Script: ${message}` });
     return { success: false, errorMessage: `Script generation failed: ${message}` };
   }
 
@@ -229,7 +228,7 @@ async function processStoryGeneration(
         durationSeconds: slide.durationSeconds,
       })),
       story.voiceGender as 'male' | 'female',
-      story.tone
+      story.tone,
     );
 
     audioPath = narration.audioPath;
@@ -252,11 +251,14 @@ async function processStoryGeneration(
       },
       narration.isSpeech
         ? 'Worker: narration synthesised'
-        : 'Worker: narration unavailable, silent track used'
+        : 'Worker: narration unavailable, silent track used',
     );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    logger.warn({ storyId: story.id, error: message }, 'Worker: TTS failed, continuing without audio');
+    logger.warn(
+      { storyId: story.id, error: message },
+      'Worker: TTS failed, continuing without audio',
+    );
   }
 
   // Step 3: Render video
@@ -284,8 +286,7 @@ async function processStoryGeneration(
     const message = error instanceof Error ? error.message : 'Unknown error';
     logger.error({ storyId: story.id, error: message }, 'Worker: video rendering failed');
     await story.update({ status: 'error' });
-    if (task)
-      await task.update({ status: 'failed', errorMessage: `Video: ${message}` });
+    if (task) await task.update({ status: 'failed', errorMessage: `Video: ${message}` });
     return { success: false, errorMessage: `Video rendering failed: ${message}` };
   }
 
@@ -294,7 +295,11 @@ async function processStoryGeneration(
   if (task) await task.update({ progress: 85 });
 
   try {
-    const publicUrl = buildShareUrl(story.id);
+    // Reuse an existing token across re-renders (editing slides and generating
+    // again must not silently break a link the user already shared) — mint one
+    // only the first time, or after an explicit revoke set it back to null.
+    const shareToken = story.shareToken || uuidv4();
+    const publicUrl = buildShareUrl(shareToken);
     const qrResult = await qrService.generateQRCode(publicUrl);
 
     const pdfResult = await pdfService.generatePDFAlbum({
@@ -314,11 +319,11 @@ async function processStoryGeneration(
       pdfUrl: pdfResult.pdfUrl,
       qrCodeUrl: qrResult.imageUrl,
       publicUrl,
+      shareToken,
     });
 
     logger.info({ storyId: story.id }, 'Worker: outputs generated');
-    if (task)
-      await task.update({ status: 'completed', progress: 100, completedAt: new Date() });
+    if (task) await task.update({ status: 'completed', progress: 100, completedAt: new Date() });
 
     return {
       success: true,
@@ -330,8 +335,7 @@ async function processStoryGeneration(
     const message = error instanceof Error ? error.message : 'Unknown error';
     logger.error({ storyId: story.id, error: message }, 'Worker: output generation failed');
     await story.update({ status: 'error' });
-    if (task)
-      await task.update({ status: 'failed', errorMessage: `Output: ${message}` });
+    if (task) await task.update({ status: 'failed', errorMessage: `Output: ${message}` });
     return { success: false, errorMessage: `Output generation failed: ${message}` };
   }
 }
@@ -355,7 +359,7 @@ export function getWorker(): Worker | null {
         connection: createConnection('worker') as unknown as Redis,
         concurrency: 2,
         limiter: { max: 5, duration: 60000 },
-      }
+      },
     );
 
     _worker.on('completed', (job) => {
@@ -364,8 +368,12 @@ export function getWorker(): Worker | null {
 
     _worker.on('failed', (job, err) => {
       logger.error(
-        { jobId: job?.id || 'unknown', storyId: job?.data?.storyId || 'unknown', error: err.message },
-        'Worker: job failed'
+        {
+          jobId: job?.id || 'unknown',
+          storyId: job?.data?.storyId || 'unknown',
+          error: err.message,
+        },
+        'Worker: job failed',
       );
     });
 

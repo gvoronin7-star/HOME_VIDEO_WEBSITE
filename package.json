@@ -11,7 +11,8 @@
     "build": "cd backend && npm run build && cd ../frontend && npm run build",
     "test": "cd backend && npm test",
     "typecheck": "cd backend && npm run typecheck && npm run typecheck:tests && cd ../frontend && npx tsc --noEmit",
-    "ci": "npm run typecheck && npm test && npm run build"
+    "lint": "cd backend && npm run lint && cd ../frontend && npm run lint",
+    "ci": "npm run typecheck && npm run lint && npm test && npm run build"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

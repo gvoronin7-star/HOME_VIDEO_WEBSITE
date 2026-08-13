@@ -6,6 +6,7 @@ import { config } from '../config';
 import { logger } from '../utils/logger';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { bindAll } from '../utils/bindAll';
+import { setAuthCookie, clearAuthCookie } from '../utils/authCookie';
 
 export class AuthController {
   constructor() {
@@ -45,6 +46,11 @@ export class AuthController {
       const token = jwt.sign({ id: user.id }, config.jwt.secret, {
         expiresIn: config.jwt.expiresIn,
       } as jwt.SignOptions);
+
+      // The browser frontend authenticates via this cookie and never touches
+      // `data.token` (see S5) — it stays in the response for API clients and
+      // the test suite, which sign requests with `Authorization: Bearer`.
+      setAuthCookie(req, res, token);
 
       logger.info({ userId: user.id }, 'User registered');
 
@@ -92,6 +98,8 @@ export class AuthController {
         expiresIn: config.jwt.expiresIn,
       } as jwt.SignOptions);
 
+      setAuthCookie(req, res, token);
+
       logger.info({ userId: user.id }, 'User logged in');
 
       res.json({
@@ -124,6 +132,21 @@ export class AuthController {
         success: true,
         data: { user },
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/auth/logout
+   * Clears the auth cookie. Necessary because it's `httpOnly` — client-side
+   * JavaScript can't read or delete it itself, unlike the old localStorage
+   * token.
+   */
+  async logout(req: Request, res: Response, next: NextFunction) {
+    try {
+      clearAuthCookie(req, res);
+      res.json({ success: true, data: { message: 'Вы вышли из системы' } });
     } catch (error) {
       next(error);
     }

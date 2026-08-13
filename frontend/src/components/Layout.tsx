@@ -21,7 +21,9 @@ export default function Layout({ children }: LayoutProps) {
       <header className="header">
         <div className="container header-content">
           <Link to="/" className="logo">
-            <span className="logo-icon" aria-hidden="true">🎬</span>
+            <span className="logo-icon" aria-hidden="true">
+              🎬
+            </span>
             <span className="logo-text">Family Cinema</span>
           </Link>
 

@@ -22,8 +22,7 @@ process.env.STORAGE_PATH = path.join(runRoot, 'uploads');
 
 // 32+ characters: the production startup guard rejects anything weaker, and tests
 // should exercise the same shape of secret real deployments use.
-process.env.JWT_SECRET =
-  process.env.JWT_SECRET || 'test-secret-Q7pX2vZ9mK4rT8wY6nB3jL5hF1dS0aG';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-Q7pX2vZ9mK4rT8wY6nB3jL5hF1dS0aG';
 
 // Nothing listens here. Tests that care about the queue assert on the failure.
 process.env.REDIS_HOST = '127.0.0.1';

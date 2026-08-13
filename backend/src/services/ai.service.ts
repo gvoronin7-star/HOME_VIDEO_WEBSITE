@@ -37,7 +37,7 @@ const scriptResponseSchema = z.object({
         caption: z.string().min(1),
         durationSeconds: z.number().positive().optional(),
         imageDescription: z.string().optional(),
-      })
+      }),
     )
     .min(1),
 });
@@ -69,7 +69,7 @@ export class AIService {
       });
       logger.info(
         { model: config.openai.model, endpoint: config.openai.baseUrl || 'api.openai.com' },
-        'AI service configured'
+        'AI service configured',
       );
     } else {
       logger.warn('OpenAI API key not configured. AI service will use mock mode.');
@@ -90,9 +90,12 @@ export class AIService {
 
     if (!this.openai) {
       logger.warn(
-        'No LLM key configured — the story text will be generic template phrases, not AI-written'
+        'No LLM key configured — the story text will be generic template phrases, not AI-written',
       );
-      return { ...this.mockScriptGeneration(imageDescriptions, templateName, tone), isFallback: true };
+      return {
+        ...this.mockScriptGeneration(imageDescriptions, templateName, tone),
+        isFallback: true,
+      };
     }
 
     const prompt = this.buildScriptPrompt({
@@ -118,7 +121,7 @@ export class AIService {
           const delayMs = 1000 * 2 ** (attempt - 1);
           logger.warn(
             { attempt, maxAttempts, delayMs, status: error?.status, error: error?.message },
-            'LLM request failed, retrying'
+            'LLM request failed, retrying',
           );
           await this.delay(delayMs);
           continue;
@@ -130,7 +133,7 @@ export class AIService {
     logger.error(
       { error: (lastError as any)?.message, status: (lastError as any)?.status },
       'LLM script generation failed after retries — FALLING BACK to the template mock. ' +
-        'The story text will be generic, this is not a model quality issue.'
+        'The story text will be generic, this is not a model quality issue.',
     );
 
     const mock = this.mockScriptGeneration(imageDescriptions, templateName, tone);
@@ -141,7 +144,7 @@ export class AIService {
   private async requestScript(
     prompt: string,
     targetLanguage: string,
-    templateName: string
+    templateName: string,
   ): Promise<ScriptResult> {
     if (!this.openai) throw new Error('LLM client is not configured');
 
@@ -205,7 +208,7 @@ export class AIService {
     const imagesText = imageDescriptions
       .map(
         (img) =>
-          `Кадр ${img.index + 1}: ${img.description}${img.isKeyFrame ? ' [КЛЮЧЕВОЙ КАДР]' : ''}`
+          `Кадр ${img.index + 1}: ${img.description}${img.isKeyFrame ? ' [КЛЮЧЕВОЙ КАДР]' : ''}`,
       )
       .join('\n');
 
@@ -246,7 +249,7 @@ ${imagesText}
   private mockScriptGeneration(
     imageDescriptions: Array<{ index: number; description: string; isKeyFrame: boolean }>,
     templateName: string,
-    tone: string
+    tone: string,
   ): Omit<ScriptResult, 'isFallback'> {
     const tonePrefixes: Record<string, string[]> = {
       warm: [
@@ -271,11 +274,12 @@ ${imagesText}
 
     const slides = imageDescriptions.map((img, i) => ({
       orderIndex: i,
-      caption: i === 0
-        ? `${prefix} ${img.description} — это начало нашей удивительной истории.`
-        : img.isKeyFrame
-          ? `Особенный момент: ${img.description}. Это фото хранит столько эмоций и воспоминаний!`
-          : `А вот ещё один прекрасный кадр: ${img.description}. Каждое фото — это целая история.`,
+      caption:
+        i === 0
+          ? `${prefix} ${img.description} — это начало нашей удивительной истории.`
+          : img.isKeyFrame
+            ? `Особенный момент: ${img.description}. Это фото хранит столько эмоций и воспоминаний!`
+            : `А вот ещё один прекрасный кадр: ${img.description}. Каждое фото — это целая история.`,
       durationSeconds: img.isKeyFrame ? 5 : 4,
       imageDescription: img.description,
     }));

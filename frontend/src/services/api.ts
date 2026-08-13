@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
+import axios, { AxiosInstance } from 'axios';
 import type {
   ApiResponse,
   AuthResponse,
@@ -16,33 +16,24 @@ class ApiService {
   constructor() {
     this.client = axios.create({
       baseURL: API_BASE,
+      // The JWT lives in an httpOnly cookie the server sets (see S5), not in
+      // a header this client attaches — the browser sends it automatically,
+      // but only if the request opts in to carrying credentials.
+      withCredentials: true,
       headers: {
         'Content-Type': 'application/json',
       },
-    });
-
-    // Add auth interceptor
-    this.client.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-      const token = localStorage.getItem('token');
-      if (token && config.headers) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-      return config;
     });
 
     // Handle 401 errors
     this.client.interceptors.response.use(
       (response) => response,
       (error) => {
-        if (error.response?.status === 401) {
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-          if (window.location.pathname !== '/login') {
-            window.location.href = '/login';
-          }
+        if (error.response?.status === 401 && window.location.pathname !== '/login') {
+          window.location.href = '/login';
         }
         return Promise.reject(error);
-      }
+      },
     );
   }
 
@@ -66,6 +57,12 @@ class ApiService {
 
   async getMe() {
     const { data } = await this.client.get<ApiResponse<{ user: any }>>('/auth/me');
+    return data;
+  }
+
+  /** Clears the server-side auth cookie — client JS can't read or delete it itself. */
+  async logout() {
+    const { data } = await this.client.post<ApiResponse<{ message: string }>>('/auth/logout');
     return data;
   }
 
@@ -115,40 +112,63 @@ class ApiService {
     return data;
   }
 
-  async updateSlides(storyId: string, slides: Array<{
-    id: string;
-    orderIndex: number;
-    caption: string;
-    durationSeconds: number;
-    isKeyFrame: boolean;
-  }>) {
+  async updateSlides(
+    storyId: string,
+    slides: Array<{
+      id: string;
+      orderIndex: number;
+      caption: string;
+      durationSeconds: number;
+      isKeyFrame: boolean;
+    }>,
+  ) {
     const { data } = await this.client.put<ApiResponse<{ message: string }>>(
       `/stories/${storyId}/slides`,
-      { slides }
+      { slides },
     );
     return data;
   }
 
   /** Fast visual check of the first slides — rendered without narration. */
   async previewStory(storyId: string) {
-    const { data } = await this.client.post<ApiResponse<{ previewUrl: string; slidesCount: number }>>(
+    const { data } = await this.client.post<
+      ApiResponse<{ previewUrl: string; slidesCount: number }>
+    >(
       `/stories/${storyId}/preview`,
       undefined,
       // Rendering happens inline; allow more than the default timeout.
-      { timeout: 120000 }
+      { timeout: 120000 },
     );
     return data;
   }
 
   async generateStory(storyId: string) {
-    const { data } = await this.client.post<ApiResponse<{ message: string; storyId: string; status: string }>>(
-      `/stories/${storyId}/generate`
-    );
+    const { data } = await this.client.post<
+      ApiResponse<{ message: string; storyId: string; status: string }>
+    >(`/stories/${storyId}/generate`);
     return data;
   }
 
   async deleteStory(storyId: string) {
-    const { data } = await this.client.delete<ApiResponse<{ message: string }>>(`/stories/${storyId}`);
+    const { data } = await this.client.delete<ApiResponse<{ message: string }>>(
+      `/stories/${storyId}`,
+    );
+    return data;
+  }
+
+  /** Invalidates the current share link and QR code, issuing a new pair. */
+  async rotateShareLink(storyId: string) {
+    const { data } = await this.client.post<ApiResponse<{ publicUrl: string; qrCodeUrl: string }>>(
+      `/stories/${storyId}/share/rotate`,
+    );
+    return data;
+  }
+
+  /** Disables public sharing outright — the old link stops resolving. */
+  async revokeShareLink(storyId: string) {
+    const { data } = await this.client.delete<ApiResponse<{ message: string }>>(
+      `/stories/${storyId}/share`,
+    );
     return data;
   }
 

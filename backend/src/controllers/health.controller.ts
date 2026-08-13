@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { logger } from '../utils/logger';
@@ -24,7 +24,7 @@ export interface HealthCheckResult {
   };
 }
 
-export async function healthCheck(req: Request, res: Response, next: NextFunction) {
+export async function healthCheck(req: Request, res: Response) {
   const checks = {
     database: 'error' as 'ok' | 'error',
     redis: 'error' as 'ok' | 'error',

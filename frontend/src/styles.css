@@ -32,7 +32,12 @@
 }
 
 body {
-  font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family:
+    'Nunito',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
   background: var(--bg);
   color: var(--text);
   line-height: 1.6;
@@ -967,8 +972,13 @@ textarea:focus-visible {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 .story-content {
@@ -1346,23 +1356,23 @@ textarea:focus-visible {
   .create-layout {
     grid-template-columns: 1fr;
   }
-  
+
   .story-content {
     grid-template-columns: 1fr;
   }
-  
+
   .hero-title {
     font-size: 36px;
   }
-  
+
   .step-arrow {
     display: none;
   }
-  
+
   .steps {
     flex-direction: column;
   }
-  
+
   .step-card {
     max-width: 100%;
   }
@@ -1373,28 +1383,28 @@ textarea:focus-visible {
     flex-wrap: wrap;
     gap: 8px;
   }
-  
+
   .nav {
     flex-wrap: wrap;
     gap: 8px;
   }
-  
+
   .hero-title {
     font-size: 28px;
   }
-  
+
   .hero-subtitle {
     font-size: 16px;
   }
-  
+
   .photo-grid {
     grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   }
-  
+
   .section-title {
     font-size: 24px;
   }
-  
+
   .footer-content {
     flex-direction: column;
     text-align: center;

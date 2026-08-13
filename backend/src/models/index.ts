@@ -20,11 +20,4 @@ Template.hasMany(Story, { foreignKey: 'templateId', as: 'stories' });
 Story.hasMany(Task, { foreignKey: 'storyId', as: 'tasks', onDelete: 'CASCADE' });
 Task.belongsTo(Story, { foreignKey: 'storyId', as: 'story' });
 
-export {
-  User,
-  Story,
-  StorySlide,
-  Template,
-  VoiceProfile,
-  Task,
-};
+export { User, Story, StorySlide, Template, VoiceProfile, Task };

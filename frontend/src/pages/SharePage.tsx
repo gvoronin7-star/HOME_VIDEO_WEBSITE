@@ -11,7 +11,8 @@ export default function SharePage() {
 
   useEffect(() => {
     if (!id) return;
-    api.getPublicStory(id)
+    api
+      .getPublicStory(id)
       .then((res) => setStory(res.data.story as Story))
       .catch(() => setError('История не найдена или ещё не готова'))
       .finally(() => setIsLoading(false));
@@ -41,9 +42,7 @@ export default function SharePage() {
     <div className="share-page">
       <div className="share-card">
         <h1 className="share-title">{story.title}</h1>
-        {story.template && (
-          <p className="share-template">{story.template.name}</p>
-        )}
+        {story.template && <p className="share-template">{story.template.name}</p>}
 
         {story.videoUrl ? (
           <div className="share-video">

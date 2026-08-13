@@ -15,9 +15,15 @@ interface StorySlideAttributes {
   updatedAt: Date;
 }
 
-interface StorySlideCreationAttributes extends Optional<StorySlideAttributes, 'id' | 'createdAt' | 'updatedAt' | 'caption' | 'durationSeconds' | 'isKeyFrame'> {}
+type StorySlideCreationAttributes = Optional<
+  StorySlideAttributes,
+  'id' | 'createdAt' | 'updatedAt' | 'caption' | 'durationSeconds' | 'isKeyFrame'
+>;
 
-export class StorySlide extends Model<StorySlideAttributes, StorySlideCreationAttributes> implements StorySlideAttributes {
+export class StorySlide
+  extends Model<StorySlideAttributes, StorySlideCreationAttributes>
+  implements StorySlideAttributes
+{
   public id!: string;
   public storyId!: string;
   public imageUrl!: string;
@@ -85,7 +91,7 @@ StorySlide.init(
     sequelize,
     tableName: 'story_slides',
     timestamps: true,
-  }
+  },
 );
 
 export default StorySlide;
