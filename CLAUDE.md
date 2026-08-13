@@ -76,8 +76,11 @@ worker pipeline from before BullMQ. Do not extend it; change the worker.
 `POST /api/stories/:id/preview` is deliberately **synchronous** and skips narration: a preview is a
 visual check that must return in seconds, so it avoids a second job type entirely.
 
-The worker is started from `server.ts`, i.e. inside the API process. `worker:prod` exists to run it
-standalone but no compose service uses it yet.
+The worker runs as its own process — `docker-compose.yml`'s `worker` service (same image as `backend`,
+`command: node dist/workers/render.worker.js`) in Docker, `npm run dev:worker` locally. `server.ts`
+does **not** start it; the API process only serves HTTP and runs the retention sweep. This is
+deliberate (P3): rendering is minutes of FFmpeg CPU time, and sharing a container with it used to mean
+the render pipeline competed with request handling, and neither could be scaled independently.
 
 **Both paths call `aiService.generateScript()` independently** — the fire-and-forget call in
 `story.controller.ts` and the worker's own step 1 in `generationQueue.ts` — each building its own
@@ -253,9 +256,6 @@ commands passing means nothing.
 ranked suggestions, `PLAN_4_DAYS.md` the execution status and an acceptance checklist. Two older
 documents in the root, `FS_CURRENT_STATE.md` and `FS_AUDIT_ONE.md`, are **historical and contradict
 the current code** — do not plan from them.
-
-Currently open: the worker sharing the API process, and `multer.memoryStorage()` holding up to 200 MB
-per upload.
 
 Unused dependencies still declared: `react-beautiful-dnd` and `qrcode.react` in the frontend,
 `fluent-ffmpeg` in the backend (the project uses its own `spawn` wrapper).

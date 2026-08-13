@@ -9,6 +9,7 @@ import { pdfService } from '../services/pdf.service';
 import { qrService } from '../services/qr.service';
 import { logger } from '../utils/logger';
 import path from 'path';
+import fs from 'fs/promises';
 import sharp from 'sharp';
 import { v4 as uuidv4 } from 'uuid';
 import { enqueueGeneration } from '../queues/generationQueue';
@@ -48,28 +49,34 @@ export class StoryController {
         });
       }
 
-      // Save photos to storage
+      // Save photos to storage. `file.path` is multer's own temp copy
+      // (diskStorage, see upload.middleware.ts) — read the original from there
+      // and always remove it once sharp is done with it, success or failure,
+      // so a rejected or malformed upload doesn't leak a temp file.
       const savedSlides = [];
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        // Optimize image with sharp
-        const optimizedBuffer = await sharp(file.buffer)
-          .resize(1920, 1080, { fit: 'inside', withoutEnlargement: true })
-          .jpeg({ quality: 85 })
-          .toBuffer();
+        try {
+          const optimizedBuffer = await sharp(file.path)
+            .resize(1920, 1080, { fit: 'inside', withoutEnlargement: true })
+            .jpeg({ quality: 85 })
+            .toBuffer();
 
-        const { url, key } = await storageService.saveFile(
-          optimizedBuffer,
-          file.originalname,
-          'photos',
-        );
+          const { url, key } = await storageService.saveFile(
+            optimizedBuffer,
+            file.originalname,
+            'photos',
+          );
 
-        savedSlides.push({
-          imageUrl: url,
-          imageKey: key,
-          orderIndex: i,
-          isKeyFrame: i === 0, // First photo is key by default
-        });
+          savedSlides.push({
+            imageUrl: url,
+            imageKey: key,
+            orderIndex: i,
+            isKeyFrame: i === 0, // First photo is key by default
+          });
+        } finally {
+          await fs.unlink(file.path).catch(() => {});
+        }
       }
 
       // Create story

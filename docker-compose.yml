@@ -110,6 +110,30 @@ services:
     networks:
       - family-network
 
+  # The BullMQ job consumer, as its own process/container — not started inside
+  # the API process (that used to make the API and the render pipeline share
+  # CPU and a crash blast radius). Same image as `backend`, just a different
+  # entrypoint; it needs the same env and the same uploads volume, since it's
+  # the one writing the rendered video, PDF and QR code the API serves back.
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: family-cinema-worker
+    command: node dist/workers/render.worker.js
+    environment: *backend-env
+    volumes:
+      - uploads-data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+    networks:
+      - family-network
+
   frontend:
     build:
       context: ./frontend

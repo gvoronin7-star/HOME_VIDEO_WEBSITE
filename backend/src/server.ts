@@ -3,7 +3,6 @@ import { config } from './config';
 import { logger } from './utils/logger';
 import sequelize from './models/sequelize';
 import './models'; // Import associations
-import startWorker from './workers/render.worker';
 import { validateSecurityConfig } from './utils/validateConfig';
 import { startRetentionSchedule } from './services/retention.service';
 
@@ -57,12 +56,10 @@ async function start() {
       logger.info('Database schema verified');
     }
 
-    // Start BullMQ worker (non-blocking — fails gracefully if Redis unavailable)
-    try {
-      startWorker();
-    } catch (err: any) {
-      logger.warn({ error: err.message }, 'BullMQ worker failed to start (Redis unavailable)');
-    }
+    // The BullMQ job consumer runs as its own process (`worker:prod` /
+    // workers/render.worker.ts), not here — the API process no longer starts
+    // it itself, so the render pipeline's CPU and crash blast radius stay
+    // separate from request handling. See docker-compose.yml's `worker` service.
 
     // Enforce the retention policy. Runs in the API process only, so a scaled-out
     // worker fleet cannot sweep concurrently.
