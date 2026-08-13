@@ -268,7 +268,15 @@ jobs:
             }
           done
 
-          curl -fsS "$API/api/share/$story" | jq -e '.data.story.videoUrl' >/dev/null || {
+          # The public page is addressed by the story's shareToken, not its id
+          # (S6) — pull it from the publicUrl the API just returned rather than
+          # assuming it equals the story id.
+          share_token=$(jq -er '.data.story.publicUrl' <<<"$detail" | sed 's#.*/##') || {
+            echo "::error::story has no publicUrl to derive a share token from"
+            exit 1
+          }
+
+          curl -fsS "$API/api/share/$share_token" | jq -e '.data.story.videoUrl' >/dev/null || {
             echo "::error::public share page does not expose the video"
             exit 1
           }
