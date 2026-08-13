@@ -15,6 +15,7 @@ import { enqueueGeneration } from '../queues/generationQueue';
 import { bindAll } from '../utils/bindAll';
 import { buildShareUrl } from '../utils/urls';
 import { collectStoryArtefacts } from '../utils/storyArtefacts';
+import { toImageDataUri } from '../utils/imageDataUri';
 
 export class StoryController {
   constructor() {
@@ -608,14 +609,16 @@ export class StoryController {
 
       await story.update({ status: 'script_generating' });
 
-      const imageDescriptions = story.slides.map((slide) => ({
-        index: slide.orderIndex,
-        description: `Фото (${path.basename(slide.imageKey)})`,
-        isKeyFrame: slide.isKeyFrame,
-      }));
+      const images = await Promise.all(
+        story.slides.map(async (slide) => ({
+          index: slide.orderIndex,
+          isKeyFrame: slide.isKeyFrame,
+          dataUri: await toImageDataUri(storageService.getFilePath(slide.imageKey)),
+        })),
+      );
 
       const script = await aiService.generateScript({
-        imageDescriptions,
+        images,
         templateName: story.template!.name,
         templateDescription: story.template!.description,
         tone: story.tone,

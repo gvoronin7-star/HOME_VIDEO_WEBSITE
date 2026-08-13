@@ -10,6 +10,7 @@ import { pdfService } from '../services/pdf.service';
 import { qrService } from '../services/qr.service';
 import { storageService } from '../services/storage.service';
 import { buildShareUrl } from '../utils/urls';
+import { toImageDataUri } from '../utils/imageDataUri';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
@@ -148,14 +149,16 @@ async function processStoryGeneration(
   if (task) await task.update({ progress: 10 });
 
   try {
-    const imageDescriptions = story.slides!.map((slide) => ({
-      index: slide.orderIndex,
-      description: `Foto #${slide.orderIndex + 1}`,
-      isKeyFrame: slide.isKeyFrame,
-    }));
+    const images = await Promise.all(
+      story.slides!.map(async (slide) => ({
+        index: slide.orderIndex,
+        isKeyFrame: slide.isKeyFrame,
+        dataUri: await toImageDataUri(storageService.getFilePath(slide.imageKey)),
+      })),
+    );
 
     const script = await aiService.generateScript({
-      imageDescriptions,
+      images,
       templateName: story.template?.name || 'История',
       templateDescription: story.template?.description || '',
       tone: story.tone,

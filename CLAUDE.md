@@ -79,6 +79,27 @@ visual check that must return in seconds, so it avoids a second job type entirel
 The worker is started from `server.ts`, i.e. inside the API process. `worker:prod` exists to run it
 standalone but no compose service uses it yet.
 
+**Both paths call `aiService.generateScript()` independently** — the fire-and-forget call in
+`story.controller.ts` and the worker's own step 1 in `generationQueue.ts` — each building its own
+`images` array from the story's current slides and running its own LLM (or mock) pass. There is no
+single call site to generate a script; a change to the request shape needs both updated together
+(see the next section).
+
+### Script generation sees the actual photos, not a text stand-in
+
+`aiService.generateScript()` takes `images: Array<{ index, isKeyFrame, dataUri }>` — real photo bytes
+as base64 data URIs, sent to the model as `image_url` content blocks (`detail: 'low'`, chosen for
+cost: plenty for scene/mood/subject captioning, far cheaper in tokens than `'auto'`, which can pick
+full resolution). `utils/imageDataUri.ts` reads a slide's file and encodes it; both call sites build
+`images` this way before calling the service. The mock fallback (`mockScriptGeneration`, used with no
+`OPENAI_API_KEY` or after the retry budget is exhausted) never sees the photos — it only has `index`
+and `isKeyFrame`, so its captions are generic on purpose. Anything reached by `mockScriptGeneration`
+must not claim to describe what's in a photo, because it never looked.
+
+Because the worker unconditionally regenerates the script and overwrites every slide's `caption`,
+clicking "Запустить генерацию" after hand-editing captions in the UI **silently discards those edits**
+— this predates the change above and is not specific to it. Worth knowing before touching this path.
+
 ### Narration owns slide timing
 
 `tts.service.ts` synthesises **one line per slide**, measures each with `ffprobe`, and the worker

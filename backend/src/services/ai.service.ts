@@ -77,34 +77,31 @@ export class AIService {
   }
 
   /**
-   * Generate a script for a story based on image descriptions, template, and tone.
+   * Generate a script for a story based on the actual photos, template, and tone.
+   *
+   * `images` carries real photo bytes (as data URIs), not text descriptions — the
+   * model is shown each frame and writes narration from what it actually sees.
    */
   async generateScript(params: {
-    imageDescriptions: Array<{ index: number; description: string; isKeyFrame: boolean }>;
+    images: Array<{ index: number; isKeyFrame: boolean; dataUri: string }>;
     templateName: string;
     templateDescription: string;
     tone: string;
     targetLanguage: string;
   }): Promise<ScriptResult> {
-    const { imageDescriptions, templateName, templateDescription, tone, targetLanguage } = params;
+    const { images, templateName, templateDescription, tone, targetLanguage } = params;
 
     if (!this.openai) {
       logger.warn(
         'No LLM key configured — the story text will be generic template phrases, not AI-written',
       );
       return {
-        ...this.mockScriptGeneration(imageDescriptions, templateName, tone),
+        ...this.mockScriptGeneration(images, templateName, tone),
         isFallback: true,
       };
     }
 
-    const prompt = this.buildScriptPrompt({
-      imageDescriptions,
-      templateName,
-      templateDescription,
-      tone,
-      targetLanguage,
-    });
+    const content = this.buildScriptContent({ images, templateName, templateDescription, tone });
 
     // Up to 3 attempts with exponential backoff. The ТЗ requires handling 429 and
     // timeouts with retries; previously a 429 slept 2s and then gave up on the mock.
@@ -113,7 +110,7 @@ export class AIService {
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        return await this.requestScript(prompt, targetLanguage, templateName);
+        return await this.requestScript(content, targetLanguage, templateName);
       } catch (error: any) {
         lastError = error;
 
@@ -136,13 +133,13 @@ export class AIService {
         'The story text will be generic, this is not a model quality issue.',
     );
 
-    const mock = this.mockScriptGeneration(imageDescriptions, templateName, tone);
+    const mock = this.mockScriptGeneration(images, templateName, tone);
     return { ...mock, isFallback: true };
   }
 
   /** One attempt at the model, with the reply validated before use. */
   private async requestScript(
-    prompt: string,
+    content: OpenAI.Chat.Completions.ChatCompletionContentPart[],
     targetLanguage: string,
     templateName: string,
   ): Promise<ScriptResult> {
@@ -155,30 +152,31 @@ export class AIService {
         messages: [
           {
             role: 'system',
-            content: `Ты — креативный сценарист семейных видео. Твоя задача — написать тёплый, 
-            эмоциональный сценарий для видео из семейных фотографий. 
-            Пиши на русском языке (${targetLanguage}). 
-            Важно: текст должен быть искренним, живым, без пафоса. 
-            Используй простые, понятные фразы. 
-            Длина каждого кадра: 15-25 слов. 
+            content: `Ты — креативный сценарист семейных видео. Твоя задача — написать тёплый,
+            эмоциональный сценарий для видео из семейных фотографий, опираясь на то, что реально
+            видно на каждом фото — не на общие фразы, которые подошли бы любому кадру.
+            Пиши на русском языке (${targetLanguage}).
+            Важно: текст должен быть искренним, живым, без пафоса.
+            Используй простые, понятные фразы.
+            Длина каждого кадра: 15-25 слов.
             Ответ выдай строго в формате JSON.`,
           },
-          { role: 'user', content: prompt },
+          { role: 'user', content },
         ],
         temperature: 0.8,
         max_tokens: 2000,
         response_format: { type: 'json_object' },
       });
 
-      const content = response.choices[0]?.message?.content;
-      if (!content) {
+      const replyText = response.choices[0]?.message?.content;
+      if (!replyText) {
         throw new Error('Empty response from LLM');
       }
 
       // Validate before touching the data: `parsed.slides.map(...)` on an
       // unexpected shape threw a TypeError that the old catch-all turned into a
       // silent mock substitution.
-      const parsed = scriptResponseSchema.parse(JSON.parse(content));
+      const parsed = scriptResponseSchema.parse(JSON.parse(replyText));
 
       logger.info({ slides: parsed.slides.length }, 'Script generated successfully');
 
@@ -196,36 +194,36 @@ export class AIService {
     }
   }
 
-  private buildScriptPrompt(params: {
-    imageDescriptions: Array<{ index: number; description: string; isKeyFrame: boolean }>;
+  /**
+   * Builds the vision request's content: one intro text block with the brief,
+   * then one [label, photo] pair per slide in order — the label right before its
+   * photo so the model can attribute what it sees to the correct frame number
+   * and key-frame flag, rather than matching them up from a separate list.
+   */
+  private buildScriptContent(params: {
+    images: Array<{ index: number; isKeyFrame: boolean; dataUri: string }>;
     templateName: string;
     templateDescription: string;
     tone: string;
-    targetLanguage: string;
-  }): string {
-    const { imageDescriptions, templateName, templateDescription, tone } = params;
+  }): OpenAI.Chat.Completions.ChatCompletionContentPart[] {
+    const { images, templateName, templateDescription, tone } = params;
 
-    const imagesText = imageDescriptions
-      .map(
-        (img) =>
-          `Кадр ${img.index + 1}: ${img.description}${img.isKeyFrame ? ' [КЛЮЧЕВОЙ КАДР]' : ''}`,
-      )
-      .join('\n');
-
-    return `
-Создай сценарий для видео по следующему шаблону:
+    const intro: OpenAI.Chat.Completions.ChatCompletionContentPart = {
+      type: 'text',
+      text: `Создай сценарий для видео по следующему шаблону:
 
 Шаблон: "${templateName}"
 Описание: "${templateDescription}"
 Тон: "${tone}"
 
-Последовательность кадров (фотографий):
-${imagesText}
+Дальше идут кадры (фотографии) в порядке появления в видео, каждый со своим номером.
 
 Требования к сценарию:
-- Для каждого кадра напиши текст озвучки (15-25 слов).
+- Посмотри на каждое фото и напиши для него текст озвучки (15-25 слов), основанный на том, что
+  реально видно на снимке — люди, место, действие, настроение. Не пиши общих фраз, которые
+  подошли бы любому кадру.
 - Общий тон: ${tone}, тёплый, душевный.
-- Ключевые кадры (помечены) должны иметь более насыщенный текст.
+- Ключевые кадры (помечены [КЛЮЧЕВОЙ КАДР]) должны иметь более насыщенный текст.
 - Придумай название для видео.
 
 Формат ответа JSON:
@@ -237,17 +235,37 @@ ${imagesText}
       "orderIndex": 0,
       "caption": "Текст для первого кадра",
       "durationSeconds": 4,
-      "imageDescription": "краткое описание кадра"
+      "imageDescription": "что видно на фото"
     }
   ]
-}
-`;
+}`,
+    };
+
+    const frames: OpenAI.Chat.Completions.ChatCompletionContentPart[] = images.flatMap((img) => [
+      {
+        type: 'text',
+        text: `Кадр ${img.index + 1}${img.isKeyFrame ? ' [КЛЮЧЕВОЙ КАДР]' : ''}:`,
+      },
+      {
+        type: 'image_url',
+        image_url: {
+          url: img.dataUri,
+          // 'low' fixes the model to a 512x512-equivalent downscale — plenty
+          // for scene/mood/subject captioning, and far cheaper in tokens than
+          // the default 'auto', which can pick full resolution per image.
+          detail: 'low',
+        },
+      },
+    ]);
+
+    return [intro, ...frames];
   }
 
   /** Canned phrases. Callers stamp `isFallback: true` so this is never mistaken
-   *  for model output. */
+   *  for model output. Never sees the actual photos — nothing here can describe
+   *  what's in them, which is exactly why it must never be mistaken for the model. */
   private mockScriptGeneration(
-    imageDescriptions: Array<{ index: number; description: string; isKeyFrame: boolean }>,
+    images: Array<{ index: number; isKeyFrame: boolean }>,
     templateName: string,
     tone: string,
   ): Omit<ScriptResult, 'isFallback'> {
@@ -272,16 +290,16 @@ ${imagesText}
     const prefixes = tonePrefixes[tone] || tonePrefixes.warm;
     const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
 
-    const slides = imageDescriptions.map((img, i) => ({
+    const slides = images.map((img, i) => ({
       orderIndex: i,
       caption:
         i === 0
-          ? `${prefix} ${img.description} — это начало нашей удивительной истории.`
+          ? `${prefix} Кадр ${img.index + 1} — это начало нашей удивительной истории.`
           : img.isKeyFrame
-            ? `Особенный момент: ${img.description}. Это фото хранит столько эмоций и воспоминаний!`
-            : `А вот ещё один прекрасный кадр: ${img.description}. Каждое фото — это целая история.`,
+            ? `Особенный момент: кадр ${img.index + 1}. Это фото хранит столько эмоций и воспоминаний!`
+            : `А вот ещё один прекрасный кадр — № ${img.index + 1}. Каждое фото — это целая история.`,
       durationSeconds: img.isKeyFrame ? 5 : 4,
-      imageDescription: img.description,
+      imageDescription: `Кадр ${img.index + 1}`,
     }));
 
     const fullText = slides.map((s) => s.caption).join(' ');

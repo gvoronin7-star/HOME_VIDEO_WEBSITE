@@ -113,8 +113,13 @@ afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
+// Not a real decodable JPEG — nothing in this test suite decodes it, the stub
+// server only records the request body. It stands in for the actual photo
+// bytes the real caller (story.controller.ts / generationQueue.ts) would embed.
+const TEST_IMAGE_DATA_URI = `data:image/jpeg;base64,${Buffer.from('test-image').toString('base64')}`;
+
 const scriptArgs = {
-  imageDescriptions: [{ index: 0, description: 'Фото #1', isKeyFrame: true }],
+  images: [{ index: 0, isKeyFrame: true, dataUri: TEST_IMAGE_DATA_URI }],
   templateName: 'День на даче',
   templateDescription: 'Тёплые моменты',
   tone: 'warm',
@@ -166,6 +171,24 @@ describe('script generation (C6)', () => {
 
     expect(result.isFallback).toBe(true);
     expect(recorded.filter((r) => r.url.includes('/chat/completions'))).toHaveLength(3);
+  });
+
+  it('sends the actual photo to the model, not a text description', async () => {
+    llmMode = 'valid';
+    recorded.length = 0;
+
+    await aiService.generateScript(scriptArgs);
+
+    const [{ body }] = recorded.filter((r) => r.url.includes('/chat/completions'));
+    const userMessage = body.messages.find((m: any) => m.role === 'user');
+
+    // The old contract sent a plain string describing the photo; the model
+    // must now be shown the frame itself.
+    expect(Array.isArray(userMessage.content)).toBe(true);
+    const imageBlock = userMessage.content.find((part: any) => part.type === 'image_url');
+    expect(imageBlock?.image_url?.url).toBe(TEST_IMAGE_DATA_URI);
+    // 'low' detail: cheap and plenty for scene/mood captioning (see ai.service.ts).
+    expect(imageBlock?.image_url?.detail).toBe('low');
   });
 });
 
