@@ -23,6 +23,10 @@ export const config = {
     user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || 'postgres',
     storage: process.env.DB_STORAGE || './database.sqlite',
+    // Whether SSL is required, not whether the app is "in production" — this
+    // project ships its own Postgres in docker-compose.yml, which has no SSL
+    // listener. Managed cloud Postgres (RDS, Heroku, etc.) needs DB_SSL=true.
+    ssl: process.env.DB_SSL === 'true',
   },
   redis: {
     host: process.env.REDIS_HOST || 'localhost',

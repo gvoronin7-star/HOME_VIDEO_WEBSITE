@@ -21,7 +21,7 @@ const sequelize = new Sequelize({
   ...(dbConfig.dialect === 'postgres'
     ? {
         dialectOptions: {
-          ssl: config.server.nodeEnv === 'production' ? { rejectUnauthorized: false } : false,
+          ssl: dbConfig.ssl ? { rejectUnauthorized: false } : false,
         },
         pool: {
           max: 10,
