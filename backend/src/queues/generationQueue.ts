@@ -112,7 +112,12 @@ export interface GenerationJobResult {
   errorMessage?: string;
 }
 
-async function processStoryGeneration(
+/**
+ * Exported so tests can drive the pipeline directly — Redis is intentionally
+ * absent in the test environment (see tests/queue-and-storage.test.ts), so
+ * there is no other way to exercise this without a live BullMQ worker.
+ */
+export async function processStoryGeneration(
   jobId: string,
   data: GenerationJobData,
 ): Promise<GenerationJobResult> {
@@ -143,60 +148,78 @@ async function processStoryGeneration(
     await task.update({ status: 'processing', progress: 5 });
   }
 
-  // Step 1: Generate script
-  logger.info({ storyId: story.id }, 'Worker: step 1 - generating script');
-  await story.update({ status: 'script_generating' });
-  if (task) await task.update({ progress: 10 });
+  // Step 1: Generate script — but only if the story doesn't have one yet. A
+  // story reaching `generate` already `script_ready` got there either from the
+  // draft-time fire-and-forget pass in story.controller.ts, or from the user
+  // hand-editing captions via PUT /slides. Regenerating unconditionally here
+  // silently discarded either — a user who edited the text and clicked
+  // "Запустить генерацию" got their edits overwritten by a brand-new AI pass
+  // with no warning.
+  if (!story.scriptText) {
+    logger.info({ storyId: story.id }, 'Worker: step 1 - generating script');
+    await story.update({ status: 'script_generating' });
+    if (task) await task.update({ progress: 10 });
 
-  try {
-    const images = await Promise.all(
-      story.slides!.map(async (slide) => ({
-        index: slide.orderIndex,
-        isKeyFrame: slide.isKeyFrame,
-        dataUri: await toImageDataUri(storageService.getFilePath(slide.imageKey)),
-      })),
-    );
+    try {
+      const images = await Promise.all(
+        story.slides!.map(async (slide) => ({
+          index: slide.orderIndex,
+          isKeyFrame: slide.isKeyFrame,
+          dataUri: await toImageDataUri(storageService.getFilePath(slide.imageKey)),
+        })),
+      );
 
-    const script = await aiService.generateScript({
-      images,
-      templateName: story.template?.name || 'История',
-      templateDescription: story.template?.description || '',
-      tone: story.tone,
-      targetLanguage: 'ru',
-    });
+      const script = await aiService.generateScript({
+        images,
+        templateName: story.template?.name || 'История',
+        templateDescription: story.template?.description || '',
+        tone: story.tone,
+        targetLanguage: 'ru',
+      });
 
-    for (const slideData of script.slides) {
-      const slide = story.slides?.find((s) => s.orderIndex === slideData.orderIndex);
-      if (slide) {
-        await slide.update({
-          caption: slideData.caption,
-          durationSeconds: slideData.durationSeconds,
+      for (const slideData of script.slides) {
+        const slide = story.slides?.find((s) => s.orderIndex === slideData.orderIndex);
+        if (slide) {
+          await slide.update({
+            caption: slideData.caption,
+            durationSeconds: slideData.durationSeconds,
+          });
+        }
+      }
+
+      await story.update({
+        scriptText: script.fullText,
+        title: script.title,
+        status: 'script_ready',
+      });
+
+      // Record whether the text came from the model or from the template mock, so a
+      // generic-sounding story can be attributed instead of guessed at.
+      if (task) {
+        await task.update({
+          resultData: { scriptSource: script.isFallback ? 'fallback' : 'llm' },
         });
       }
+
+      logger.info(
+        { storyId: story.id, scriptSource: script.isFallback ? 'fallback' : 'llm' },
+        'Worker: script generated',
+      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      logger.error({ storyId: story.id, error: message }, 'Worker: script generation failed');
+      await story.update({ status: 'error' });
+      if (task) await task.update({ status: 'failed', errorMessage: `Script: ${message}` });
+      return { success: false, errorMessage: `Script generation failed: ${message}` };
     }
-
-    await story.update({
-      scriptText: script.fullText,
-      title: script.title,
-      status: 'script_ready',
-    });
-
-    // Record whether the text came from the model or from the template mock, so a
-    // generic-sounding story can be attributed instead of guessed at.
-    if (task) {
-      await task.update({ resultData: { scriptSource: script.isFallback ? 'fallback' : 'llm' } });
-    }
-
+  } else {
     logger.info(
-      { storyId: story.id, scriptSource: script.isFallback ? 'fallback' : 'llm' },
-      'Worker: script generated',
+      { storyId: story.id },
+      'Worker: step 1 - reusing existing script (already generated or hand-edited)',
     );
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    logger.error({ storyId: story.id, error: message }, 'Worker: script generation failed');
-    await story.update({ status: 'error' });
-    if (task) await task.update({ status: 'failed', errorMessage: `Script: ${message}` });
-    return { success: false, errorMessage: `Script generation failed: ${message}` };
+    if (task) {
+      await task.update({ progress: 10, resultData: { scriptSource: 'reused' } });
+    }
   }
 
   await story.reload({

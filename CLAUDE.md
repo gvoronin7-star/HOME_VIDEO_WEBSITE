@@ -96,9 +96,12 @@ full resolution). `utils/imageDataUri.ts` reads a slide's file and encodes it; b
 and `isKeyFrame`, so its captions are generic on purpose. Anything reached by `mockScriptGeneration`
 must not claim to describe what's in a photo, because it never looked.
 
-Because the worker unconditionally regenerates the script and overwrites every slide's `caption`,
-clicking "Запустить генерацию" after hand-editing captions in the UI **silently discards those edits**
-— this predates the change above and is not specific to it. Worth knowing before touching this path.
+The worker's step 1 only calls the model when `story.scriptText` is still empty — a story reaching
+`generate` already `script_ready` got there either from the draft-time fire-and-forget pass or from
+the user hand-editing captions via `PUT /slides`, and regenerating unconditionally used to silently
+discard either. `processStoryGeneration` is exported specifically so this can be tested directly
+(`tests/queue-and-storage.test.ts`, describe block "worker: regenerating a story") — Redis is
+intentionally absent in tests, so there is no other way to drive the pipeline without a live worker.
 
 ### Narration owns slide timing
 
