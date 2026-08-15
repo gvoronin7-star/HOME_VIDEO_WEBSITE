@@ -82,6 +82,13 @@ does **not** start it; the API process only serves HTTP and runs the retention s
 deliberate (P3): rendering is minutes of FFmpeg CPU time, and sharing a container with it used to mean
 the render pipeline competed with request handling, and neither could be scaled independently.
 
+`worker` depends on `backend` (`condition: service_started`), not just on Postgres/Redis/`init`, even
+though it doesn't call the API. Both services mount the same empty `uploads-data` volume; Docker
+populates a volume from the image's directory contents only the first time it's mounted while still
+empty, and letting `backend` and `worker` start at the exact same instant raced that copy between the
+two containers (`mkdir ... file exists`) — caught by the CI compose smoke test, not by any local
+command. Ordering the two so `backend` mounts first makes `worker`'s mount a no-op copy.
+
 **Both paths call `aiService.generateScript()` independently** — the fire-and-forget call in
 `story.controller.ts` and the worker's own step 1 in `generationQueue.ts` — each building its own
 `images` array from the story's current slides and running its own LLM (or mock) pass. There is no

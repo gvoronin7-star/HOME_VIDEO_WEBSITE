@@ -115,6 +115,14 @@ services:
   # CPU and a crash blast radius). Same image as `backend`, just a different
   # entrypoint; it needs the same env and the same uploads volume, since it's
   # the one writing the rendered video, PDF and QR code the API serves back.
+  #
+  # Depends on `backend` (not just postgres/redis/init) so the two containers
+  # don't mount the empty `uploads-data` volume at the same instant: Docker
+  # only copies the image's /app/uploads contents into a volume the first time
+  # it's mounted while still empty, and two containers doing that concurrently
+  # race on creating the same subdirectories ("mkdir ... file exists"). Once
+  # `backend` has started and populated the volume, `worker`'s mount is a
+  # no-op copy.
   worker:
     build:
       context: ./backend
@@ -131,6 +139,8 @@ services:
         condition: service_healthy
       init:
         condition: service_completed_successfully
+      backend:
+        condition: service_started
     networks:
       - family-network
 
