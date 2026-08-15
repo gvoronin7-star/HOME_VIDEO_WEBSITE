@@ -271,6 +271,56 @@ describe('task progress reporting (F2, C3)', () => {
     expect(response.body.data.task.progress).toBe(40);
   });
 
+  it('picks the most recent task when a story has several, not whichever the join happens to return (N1)', async () => {
+    const { token, userId } = await registerUser(app);
+    const template = await seedTemplate(models);
+
+    const story = await models.Story.create({
+      userId,
+      title: 'Несколько задач',
+      templateId: template.id,
+      status: 'rendering',
+      tone: 'warm',
+      voiceGender: 'female',
+    });
+
+    // Inserted deliberately out of chronological order: the middle task by
+    // creation time is inserted last, and the oldest is inserted first. A
+    // query that isn't genuinely sorted by createdAt — e.g. one that relies
+    // on a JOIN's incidental row order, or on `limit: 1` inside a `hasMany`
+    // include without `separate: true` (per the association's own row cap,
+    // not a real per-parent ORDER BY) — would return the wrong one here.
+    await models.Task.create({
+      storyId: story.id,
+      type: 'generate_script',
+      status: 'completed',
+      progress: 10,
+      createdAt: new Date('2020-01-01T00:00:00Z'),
+    });
+    await models.Task.create({
+      storyId: story.id,
+      type: 'render_video',
+      status: 'completed',
+      progress: 90,
+      createdAt: new Date('2020-01-03T00:00:00Z'),
+    });
+    await models.Task.create({
+      storyId: story.id,
+      type: 'generate_tts',
+      status: 'processing',
+      progress: 50,
+      createdAt: new Date('2020-01-02T00:00:00Z'),
+    });
+
+    const response = await request(app)
+      .get(`/api/stories/${story.id}/status`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(response.body.data.task).not.toBeNull();
+    expect(response.body.data.task.progress).toBe(90);
+  });
+
   it('round-trips JSONB result data on SQLite (N2)', async () => {
     const { userId } = await registerUser(app);
     const template = await seedTemplate(models);
