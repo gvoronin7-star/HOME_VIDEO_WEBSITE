@@ -222,6 +222,43 @@ describe('slide editing (F4)', () => {
     expect(slide.isKeyFrame).toBe(true);
   });
 
+  it("does not touch another story's slide, even if its id is included in the payload (P2)", async () => {
+    const mine = await storyWithSlide();
+    const theirs = await storyWithSlide();
+
+    await request(app)
+      .put(`/api/stories/${mine.storyId}/slides`)
+      .set('Authorization', `Bearer ${mine.token}`)
+      .send({
+        slides: [
+          {
+            id: mine.slide.id,
+            orderIndex: 0,
+            caption: 'Моя правка.',
+            durationSeconds: 5,
+            isKeyFrame: true,
+          },
+          {
+            // Not one of `mine.storyId`'s own slides — bulkCreate's upsert
+            // matches by primary key alone, so this must be filtered out
+            // before reaching it, or it would overwrite a slide belonging
+            // to a story this caller doesn't even own.
+            id: theirs.slide.id,
+            orderIndex: 0,
+            caption: 'Чужая правка.',
+            durationSeconds: 5,
+            isKeyFrame: true,
+          },
+        ],
+      })
+      .expect(200);
+
+    await theirs.slide.reload();
+    await mine.slide.reload();
+    expect(mine.slide.caption).toBe('Моя правка.');
+    expect(theirs.slide.caption).not.toBe('Чужая правка.');
+  });
+
   it('accepts shell metacharacters as ordinary text', async () => {
     // S1 is fixed at the root, so these are just characters. The earlier ban on
     // them also blocked quotation marks and apostrophes that narration needs.

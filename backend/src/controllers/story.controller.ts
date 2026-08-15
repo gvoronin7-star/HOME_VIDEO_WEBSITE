@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { Story, StorySlide, Template, Task } from '../models';
+import sequelize from '../models/sequelize';
 import { storageService } from '../services/storage.service';
 import { aiService } from '../services/ai.service';
 import { ttsService } from '../services/tts.service';
@@ -53,7 +54,12 @@ export class StoryController {
       // (diskStorage, see upload.middleware.ts) — read the original from there
       // and always remove it once sharp is done with it, success or failure,
       // so a rejected or malformed upload doesn't leak a temp file.
-      const savedSlides = [];
+      const savedSlides: Array<{
+        imageUrl: string;
+        imageKey: string;
+        orderIndex: number;
+        isKeyFrame: boolean;
+      }> = [];
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         try {
@@ -79,27 +85,36 @@ export class StoryController {
         }
       }
 
-      // Create story
-      const story = await Story.create({
-        userId: req.user!.id,
-        title: title || `История: ${template.name}`,
-        templateId: template.id,
-        status: 'draft',
-        tone: tone || template.tone,
-        voiceGender: voiceGender || 'female',
-      });
+      // Create the story and its slides together — a crash between the two
+      // used to leave a story with no slides at all (or a story deleted
+      // without ever getting them, in an already-uploaded orphan state).
+      const story = await sequelize.transaction(async (t) => {
+        const newStory = await Story.create(
+          {
+            userId: req.user!.id,
+            title: title || `История: ${template.name}`,
+            templateId: template.id,
+            status: 'draft',
+            tone: tone || template.tone,
+            voiceGender: voiceGender || 'female',
+          },
+          { transaction: t },
+        );
 
-      // Create slides
-      for (const slide of savedSlides) {
-        await StorySlide.create({
-          storyId: story.id,
-          imageUrl: slide.imageUrl,
-          imageKey: slide.imageKey,
-          orderIndex: slide.orderIndex,
-          isKeyFrame: slide.isKeyFrame,
-          durationSeconds: template.defaultDurationSeconds,
-        });
-      }
+        await StorySlide.bulkCreate(
+          savedSlides.map((slide) => ({
+            storyId: newStory.id,
+            imageUrl: slide.imageUrl,
+            imageKey: slide.imageKey,
+            orderIndex: slide.orderIndex,
+            isKeyFrame: slide.isKeyFrame,
+            durationSeconds: template.defaultDurationSeconds,
+          })),
+          { transaction: t },
+        );
+
+        return newStory;
+      });
 
       logger.info({ storyId: story.id, slidesCount: savedSlides.length }, 'Story created');
 
@@ -203,10 +218,17 @@ export class StoryController {
    */
   async updateSlides(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const { slides } = req.body; // Array of { id, orderIndex, caption, durationSeconds, isKeyFrame }
+      const slides = req.body.slides as Array<{
+        id: string;
+        orderIndex: number;
+        caption: string;
+        durationSeconds: number;
+        isKeyFrame: boolean;
+      }>;
 
       const story = await Story.findOne({
         where: { id: req.params.id, userId: req.user!.id },
+        include: [{ model: StorySlide, as: 'slides' }],
       });
 
       if (!story) {
@@ -216,15 +238,36 @@ export class StoryController {
         });
       }
 
-      for (const slideData of slides) {
-        await StorySlide.update(
-          {
+      // Ownership is checked here, before the bulk upsert below, rather than
+      // relying on a per-row `storyId` match like the old per-row UPDATE did:
+      // bulkCreate's ON CONFLICT UPDATE matches only by primary key, so an id
+      // that isn't already one of this story's own slides must be dropped
+      // here — otherwise it would either silently touch nothing (fine) or,
+      // if the id happened to collide with a real row, update a slide that
+      // belongs to a different story entirely.
+      const ownedSlides = new Map((story.slides ?? []).map((slide: any) => [slide.id, slide]));
+      const updates = slides
+        .filter((slideData) => ownedSlides.has(slideData.id))
+        .map((slideData) => {
+          const existing = ownedSlides.get(slideData.id);
+          return {
+            id: slideData.id,
+            storyId: story.id,
+            imageUrl: existing.imageUrl as string,
+            imageKey: existing.imageKey as string,
             orderIndex: slideData.orderIndex,
             caption: slideData.caption,
             durationSeconds: slideData.durationSeconds,
             isKeyFrame: slideData.isKeyFrame,
-          },
-          { where: { id: slideData.id, storyId: story.id } },
+          };
+        });
+
+      if (updates.length > 0) {
+        await sequelize.transaction((t) =>
+          StorySlide.bulkCreate(updates, {
+            updateOnDuplicate: ['orderIndex', 'caption', 'durationSeconds', 'isKeyFrame'],
+            transaction: t,
+          }),
         );
       }
 
