@@ -29,16 +29,37 @@
 - Документация
   - `README.md` — полная документация проекта
   - `CONTRIBUTING.md` — правила внесения изменений
+- Версионированные миграции (`umzug` поверх `sequelize.sync()`)
+  - `backend/src/migrations/` — миграция, добавляющая `Story.shareToken`
+  - `backend/src/migrations/runner.ts` — явный список миграций, без glob-обнаружения
+- ESLint + Prettier в обоих пакетах, `npm run lint` в корневом `package.json`
+- Компьютерное зрение для сценария — `aiService.generateScript()` отправляет модели реальные
+  фото (`image_url`, `detail: 'low'`) вместо текстовых заглушек; `utils/imageDataUri.ts` кодирует
+  фото в base64 data URI
+- Отзыв и ротация публичной ссылки (S6)
+  - `Story.shareToken` — отдельный UUID, независимый от `id` истории
+  - `POST /api/stories/:id/share/rotate`, `DELETE /api/stories/:id/share`
+- `POST /api/auth/logout` — очищает httpOnly-cookie (JS не может сделать это сам)
+- Отдельный процесс воркера (P3) — сервис `worker` в `docker-compose.yml`,
+  `npm run dev:worker` локально; `server.ts` больше его не запускает
 
 ### Changed
 - `POST /api/stories/:id/generate` — теперь возвращает `taskId` и `queued`
 - `GET /api/stories/:id/status` — возвращает данные из Task модели
 - `render.worker.ts` — переписан на BullMQ (без setInterval)
 - `render.service.ts` — асинхронные вызовы FFmpeg
+- JWT-токен переехал из тела ответа/localStorage в httpOnly-cookie (S5) — `Authorization: Bearer`
+  продолжает работать для API-клиентов и тестов, заголовок приоритетнее cookie
+- Загрузка фото переведена с `multer.memoryStorage()` на `diskStorage()` (P4) — запрос больше не
+  буферизует все фото целиком в памяти процесса
+- Воркер регенерирует сценарий только если у истории его ещё нет — повторный запуск генерации
+  больше не затирает сценарий, сгенерированный при создании, или подписи, отредактированные вручную
 
 ### Fixed
 - Debounce логов Redis ошибки (не спамит при недоступности)
 - Lazy loading BullMQ worker (не блокирует старт без Redis)
+- SSL для Postgres больше не выводится из `NODE_ENV`, а задаётся явным `DB_SSL`
+- `GET /api/share/:token` — smoke-тест CI строил ссылку по `id` истории после введения `shareToken`
 
 ---
 

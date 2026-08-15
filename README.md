@@ -39,7 +39,7 @@ Family Cinema — веб-приложение для создания трога
 
 ### Тесты и CI
 
-82 интеграционных и модульных теста на Vitest + Supertest. Прогон:
+88 интеграционных и модульных теста на Vitest + Supertest. Прогон:
 
 ```bash
 npm test
@@ -70,8 +70,7 @@ CI — [`.github/workflows/ci.yml`](.github/workflows/ci.yml), четыре за
 - **«календаря воспоминаний»** по EXIF;
 - **облачного хранилища** — файлы лежат на локальном диске (`STORAGE_TYPE=s3` в конфигурации
   предусмотрен, но не реализован);
-- **версионированных миграций** — схема поднимается шагом инициализации;
-- **ESLint и Prettier**, **HTTPS**, **security-заголовков и CSP**.
+- **HTTPS** — обеспечивается на уровне обратного прокси при деплое, сам сервис его не терминирует.
 
 Актуальное состояние и открытые вопросы: [AUDIT_2026-08-12.md](AUDIT_2026-08-12.md),
 [PROPOSALS.md](PROPOSALS.md), [PLAN_4_DAYS.md](PLAN_4_DAYS.md).
@@ -80,8 +79,8 @@ CI — [`.github/workflows/ci.yml`](.github/workflows/ci.yml), четыре за
 > запускаться. Сгенерировать:
 > `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`
 >
-> Ограничение частоты запросов включено. Пока не сделано: security-заголовки и CSP (**S4**),
-> httpOnly-cookie вместо localStorage (**S5**), отзыв публичной ссылки (**S6**).
+> Ограничение частоты запросов, security-заголовки/CSP, httpOnly-cookie для токена и отзыв
+> публичной ссылки уже реализованы.
 
 ---
 
@@ -89,7 +88,7 @@ CI — [`.github/workflows/ci.yml`](.github/workflows/ci.yml), четыре за
 
 ```
 ┌─────────────────┐         ┌─────────────────┐
-│   Frontend      │         │   Backend       │
+│   Frontend      │         │   Backend (API) │
 │   (React + Vite)│         │   (Express +    │
 │   :5173         │◄───────►│    TypeScript)  │
 └─────────────────┘  HTTP   │   :4000         │
@@ -99,9 +98,20 @@ CI — [`.github/workflows/ci.yml`](.github/workflows/ci.yml), четыре за
               │                      │                      │
     ┌─────────▼────────┐  ┌─────────▼────────┐  ┌─────────▼────────┐
     │  PostgreSQL      │  │     Redis        │  │   Local FS       │
-    │  (или SQLite)    │  │  (BullMQ queue)  │  │   (uploads)      │
-    └──────────────────┘  └──────────────────┘  └──────────────────┘
+    │  (или SQLite)    │  │  (BullMQ queue)  │◄─┤   (uploads)      │
+    └──────────────────┘  └────────┬─────────┘  └──────────────────┘
+                                    │ jobs
+                           ┌────────▼─────────┐
+                           │   Worker          │
+                           │   (свой процесс,  │
+                           │   FFmpeg/TTS/LLM) │
+                           └───────────────────┘
 ```
+
+Backend (API) и Worker — два отдельных процесса (в Docker — два отдельных контейнера из одного
+образа): API только отвечает на HTTP и не рендерит видео, Worker только читает очередь и не
+обслуживает запросы. `POST /api/stories` — исключение: она сама (в процессе API) запускает
+генерацию сценария в фоне, минуя очередь, — см. «Потоки данных» ниже.
 
 ### Потоки данных
 
@@ -147,7 +157,6 @@ CI — [`.github/workflows/ci.yml`](.github/workflows/ci.yml), четыре за
 | Сборщик         | Vite                    | 5.4+    |
 | Роутинг         | React Router DOM        | 6.26+   |
 | HTTP-клиент     | Axios                   | 1.7+    |
-| Drag & Drop     | react-beautiful-dnd     | 13.1+   |
 | Уведомления     | react-hot-toast         | 2.4+    |
 | Загрузка файлов  | react-dropzone          | 14.2+   |
 
@@ -248,6 +257,7 @@ docker compose down -v
 | postgres  | postgres:15-alpine      | 5432   | Основная БД            |
 | redis     | redis:7-alpine          | 6379   | BullMQ очередь         |
 | backend   | custom (backend/)       | 4000   | API сервер             |
+| worker    | custom (backend/), тот же образ | —  | BullMQ-воркер рендеринга (`node dist/workers/render.worker.js`), отдельный процесс от API |
 | frontend  | custom (frontend/)      | 3000   | Веб-интерфейс (nginx)  |
 
 ### Переменные окружения для Docker
@@ -270,7 +280,11 @@ CORS_ORIGIN=http://localhost:5173
 |---------|-------------------------|--------------------|-------------|
 | POST    | `/api/auth/register`    | Регистрация        | ❌          |
 | POST    | `/api/auth/login`       | Вход               | ❌          |
+| POST    | `/api/auth/logout`      | Выход (сброс cookie) | ✅        |
 | GET     | `/api/auth/me`          | Профиль пользователя | ✅        |
+
+Токен выдаётся и как httpOnly-cookie (её использует фронтенд), и в теле ответа JSON (для API-клиентов
+и тестов) — `Authorization: Bearer` в заголовке имеет приоритет над cookie, если присутствуют оба.
 
 **Регистрация** — `POST /api/auth/register`
 
@@ -387,9 +401,14 @@ voiceGender: "female"
 
 ### Общий доступ
 
-| Метод   | Путь                    | Описание              | Авторизация |
-|---------|-------------------------|-----------------------|-------------|
-| GET     | `/api/share/:id`        | Публичная страница    | ❌          |
+Публичная ссылка строится на отдельном UUID-токене (`Story.shareToken`), а не на id истории —
+это позволяет отзывать доступ, не ломая внешние ключи, указывающие на историю.
+
+| Метод   | Путь                          | Описание                              | Авторизация |
+|---------|-------------------------------|----------------------------------------|-------------|
+| GET     | `/api/share/:token`           | Публичная страница                    | ❌          |
+| POST    | `/api/stories/:id/share/rotate` | Выпустить новый токен, старая ссылка перестаёт работать | ✅ |
+| DELETE  | `/api/stories/:id/share`      | Отключить публичный доступ (обнулить токен) | ✅     |
 
 ### Здоровье системы
 
@@ -533,6 +552,7 @@ cinem2/
 | pdfUrl         | TEXT     | Ссылка на PDF         |
 | qrCodeUrl      | TEXT     | Ссылка на QR-код      |
 | publicUrl      | TEXT     | Публичная ссылка      |
+| shareToken     | UUID, nullable, unique | Токен для `/api/share/:token`; отдельный от `id`, чтобы ссылку можно было отозвать |
 | createdAt      | DATE     | Дата создания         |
 | updatedAt      | DATE     | Дата обновления       |
 
@@ -598,6 +618,7 @@ cinem2/
 | `DB_USER`            | `postgres`            | Пользователь БД           |
 | `DB_PASSWORD`        | `postgres`            | Пароль БД                 |
 | `DB_STORAGE`         | `./database.sqlite`   | Путь к SQLite файлу       |
+| `DB_SSL`             | `false`               | SSL для Postgres. Docker Compose Postgres не слушает SSL, поэтому не выводится из `NODE_ENV` |
 | `REDIS_HOST`         | `localhost`           | Хост Redis                |
 | `REDIS_PORT`         | `6379`                | Порт Redis                |
 | `JWT_SECRET`         | `dev-secret-key`      | Секрет JWT                |
@@ -613,7 +634,7 @@ cinem2/
 | `TTS_FORMAT`         | `mp3`                 | mp3, wav, opus, aac, flac |
 | `MAX_FILE_SIZE_MB`   | `10`                  | Макс. размер файла (МБ)   |
 | `MAX_PHOTOS`         | `20`                  | Макс. количество фото     |
-| `FILE_RETENTION_DAYS`| `7`                   | Срок хранения файлов (метод очистки есть, планировщик не подключён) |
+| `FILE_RETENTION_DAYS`| `7`                   | Срок хранения историй; чистка старше этого срока запускается по расписанию в процессе API |
 
 ---
 
@@ -628,9 +649,12 @@ cinem2/
 | `npm run dev`     | Запуск с hot-reload       |
 | `npm run build`   | Сборка TypeScript         |
 | `npm start`       | Запуск production         |
-| `npm run worker`  | Запуск воркера            |
-| `npm run migrate` | Применить миграции        |
+| `npm run worker`  | Запуск воркера (dev, ts-node-dev) |
+| `npm run worker:prod` | Запуск воркера из собранного `dist/` |
+| `npm run migrate` | `sequelize.sync()` + применить миграции umzug |
 | `npm run seed`    | Заполнить БД данными      |
+| `npm run lint`    | ESLint                    |
+| `npm run format`  | Prettier `--write`        |
 
 #### Frontend
 

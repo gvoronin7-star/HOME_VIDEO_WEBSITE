@@ -6,7 +6,7 @@ Family Cinema — это клиент-серверное веб-приложен
 
 ```
 ┌─────────────┐     ┌─────────────────────────────────────────┐
-│   Browser    │     │            Backend (Express)            │
+│   Browser    │     │          Backend API (Express)          │
 │   React SPA  │────▶│  ┌──────────┐  ┌──────────────────┐    │
 │              │     │  │ Routes   │  │  Controllers     │    │
 │  - Auth      │HTTP  │  │ Middleware│─▶│  - Story Logic  │    │
@@ -29,58 +29,99 @@ Family Cinema — это клиент-серверное веб-приложен
                                                │  (Sequelize) │
                                                └──────┬───────┘
                                                       │
-                                    ┌─────────────────┼─────────────────┐
-                                    │                 │                 │
-                            ┌───────▼───────┐ ┌──────▼──────┐ ┌──────▼──────┐
-                            │   SQLite /    │ │  Local FS   │ │  OpenAI API │
-                            │   PostgreSQL  │ │  (uploads)  │ │  (GPT-4o)   │
-                            └───────────────┘ └─────────────┘ └─────────────┘
+                                    ┌─────────────────┼─────────────────┬──────────────┐
+                                    │                 │                 │              │
+                            ┌───────▼───────┐ ┌──────▼──────┐ ┌──────▼──────┐ ┌───────▼───────┐
+                            │   SQLite /    │ │  Local FS   │ │  OpenAI API │ │  Redis        │
+                            │   PostgreSQL  │ │  (uploads)  │ │  (GPT-4o)   │ │  (BullMQ job) │
+                            └───────────────┘ └─────────────┘ └─────────────┘ └───────┬───────┘
+                                                                                       │ jobs
+                                                                              ┌────────▼────────┐
+                                                                              │  Worker process   │
+                                                                              │  (own Docker      │
+                                                                              │  container / own  │
+                                                                              │  OS process)      │
+                                                                              │  runs the same    │
+                                                                              │  Services above:  │
+                                                                              │  AI → TTS →       │
+                                                                              │  Render → QR/PDF  │
+                                                                              └───────────────────┘
 ```
+
+The API process and the worker process are two separate deployables sharing one codebase — the API
+image also builds the worker's entry point, but `server.ts` never starts it. This is deliberate:
+FFmpeg rendering is minutes of CPU time, and sharing a process with request handling used to mean the
+render pipeline competed with HTTP traffic. See "Потоки данных" below for the two distinct request
+paths that follow from this split.
 
 ---
 
 ## Потоки данных
 
-### 1. Создание истории
+### 1. Создание истории (в процессе API, без очереди)
+
+`POST /api/stories` сохраняет фото и создаёт запись целиком синхронно, а генерацию сценария
+запускает как fire-and-forget промис **в самом процессе API** — ответ уходит клиенту раньше, чем
+сценарий готов. Поэтому история приходит клиенту как `draft` и переходит в `script_ready` через
+несколько секунд; фронтенд поэтому опрашивает и `draft`, и рабочие статусы. Это единственный
+шаг конвейера, который не проходит через очередь — озвучка, рендер видео, QR и PDF в этот вызов
+не входят.
 
 ```
-Frontend                    Backend                     Services
+Frontend                    Backend (API)                Services
    │                           │                           │
    │  POST /stories            │                           │
    │  (multipart/form-data)   │                           │
    │────────────────────────▶│                           │
    │                           │                           │
-   │                           │── sharp ────────────────▶│ Оптимизация фото
+   │                           │── sharp ────────────────▶│ Оптимизация фото (потоково, через disk storage)
    │                           │                           │
    │                           │── storage.saveFile ─────▶│ Сохранение фото
    │                           │                           │
-   │                           │── Story.create           │ Создание записи
+   │                           │── Story.create           │ Создание записи (status: draft)
    │                           │                           │
    │                           │── StorySlide.create      │ Создание слайдов
    │                           │                           │
-   │  201 { story }            │                           │
+   │  201 { story: draft }     │                           │
    │◀────────────────────────│                           │
    │                           │                           │
-   │                           │  (async)                  │
+   │                           │  (fire-and-forget promise, тот же процесс)
    │                           │                           │
-   │                           │── generateScript         │
+   │                           │── aiService.generateScript(images) ─▶│ Сценарий по реальным фото (data URI)
    │                           │                           │
-   │                           │                           │── OpenAI ──▶│ Генерация сценария
-   │                           │                           │              │
-   │                           │── Story.update           │ Сохранение сценария
-   │                           │                           │
-   │                           │── ttsService.synthesize  │ Синтез речи
-   │                           │                           │
-   │                           │── renderService.render   │ Мозаика видео
-   │                           │                           │
-   │                           │── qrService.generate     │ QR-код
-   │                           │                           │
-   │                           │── pdfService.generate    │ PDF-альбом
-   │                           │                           │
-   │                           │── Story.update           │ Обновление статусов
+   │                           │── Story.update           │ status → script_ready
 ```
 
-### 2. Мониторинг статуса
+### 2. Полная генерация (через очередь BullMQ и отдельный воркер)
+
+`POST /api/stories/:id/generate` — единственный путь, запускающий весь конвейер: озвучку, рендер
+FFmpeg, QR и PDF. Он создаёт запись `Task` и ставит задачу в очередь; обрабатывает её отдельный
+процесс воркера (`docker-compose.yml`, сервис `worker`), не API.
+
+```
+Frontend               Backend (API)            Redis/BullMQ          Worker (свой процесс)
+   │                        │                        │                        │
+   │  POST /:id/generate    │                        │                        │
+   │───────────────────────▶│                        │                        │
+   │                        │── Task.create           │                        │
+   │                        │── queue.add ───────────▶│                        │
+   │  202 { task }          │                        │── job ────────────────▶│
+   │◀───────────────────────│                        │                        │
+   │                        │                        │                        │── aiService (если scriptText ещё пуст)
+   │                        │                        │                        │── ttsService.synthesizeSlides
+   │                        │                        │                        │── renderService.renderVideo (FFmpeg)
+   │                        │                        │                        │── qrService.generateQRCode
+   │                        │                        │                        │── pdfService.generatePDFAlbum
+   │                        │                        │                        │── Task.update (progress 5→10→30→40→80→85→100)
+   │                        │                        │                        │── Story.update (status: ready)
+```
+
+Шаг сценария в воркере вызывает LLM только если `story.scriptText` ещё пусто — история, дошедшая
+до `generate` уже с `script_ready`, получила его либо из фонового прохода при создании, либо из
+правок пользователя через `PUT /slides`; безусловная регенерация раньше молча затирала и то, и
+другое.
+
+### 3. Мониторинг статуса
 
 ```
 Frontend              Backend              Database
@@ -103,15 +144,19 @@ Frontend              Backend              Database
    │◀────────────────────│                    │
 ```
 
-### 3. Публичный просмотр
+### 4. Публичный просмотр
+
+Ключ поиска — отдельный `shareToken` (UUID), а не `id` истории: так публичную ссылку можно
+отозвать (`DELETE /share`) или перевыпустить (`POST /share/rotate`), не ломая внешние ключи,
+указывающие на историю.
 
 ```
 Browser (any user)      Backend              Database
       │                     │                    │
-      │  GET /share/:id     │                    │
+      │  GET /share/:token  │                    │
       │────────────────────▶│                    │
       │                     │── Story.findOne    │
-      │                     │  (status='ready')  │
+      │                     │  (shareToken, status='ready') │
       │                     │                    │
       │  { story: {...} }   │                    │
       │◀────────────────────│                    │
@@ -151,6 +196,7 @@ Browser (any user)      Backend              Database
 │ pdfUrl       │       │ createdAt        │
 │ qrCodeUrl    │       └──────────────────┘
 │ publicUrl    │
+│ shareToken   │
 │ createdAt    │
 │ updatedAt    │
 └──────────────┘
@@ -197,27 +243,40 @@ draft ──▶ script_generating ──▶ script_ready ──▶ rendering ─
 Генерация сценариев через OpenAI GPT.
 
 **Рабочий процесс:**
-1. Формирование промпта с описанием кадров, шаблона и тона
-2. Вызов OpenAI Chat Completions API
-3. Парсинг JSON-ответа
-4. Fallback на mock-генерацию при ошибке
+1. Для каждого слайда читаются реальные байты фото и кодируются в base64 data URI
+   (`utils/imageDataUri.ts`)
+2. Формирование сообщения модели: текстовые блоки чередуются с `image_url`-блоками фото
+   (`detail: 'low'` — достаточно для описания сцены/настроения, но заметно дешевле по токенам,
+   чем `'auto'`, который может взять полное разрешение)
+3. Вызов OpenAI Chat Completions API (vision-режим)
+4. Парсинг JSON-ответа
+5. Fallback на mock-генерацию при ошибке или отсутствии `OPENAI_API_KEY`
 
 **Fallback:**
-Если OpenAI недоступен или возникает ошибка, используется mock-режим с шаблонными фразами.
+Если OpenAI недоступен, ключ не задан или исчерпан бюджет повторов, используется mock-режим с
+шаблонными фразами. Mock-режим фото не видит вообще — у него есть только индекс кадра и признак
+ключевого кадра, поэтому его подписи намеренно общие, а не описывают содержимое снимка.
+
+Оба пути генерации (фоновый вызов при создании истории и первый шаг воркера) вызывают
+`aiService.generateScript()` независимо друг от друга, каждый собирая свой массив `images` из
+текущих слайдов истории.
 
 ### TTS Service (`tts.service.ts`)
 
-Синтез речи из текста.
+Синтез речи из текста — одна реплика на слайд, через OpenAI-совместимый API.
 
-**Поддерживаемые сервисы:**
-- `browser` (default) — заглушка (генерирует тишину)
-- `azure` — TODO: Azure Speech SDK
-- `yandex` — TODO: Yandex SpeechKit (планируется)
+**Поддерживаемые режимы (`TTS_SERVICE`):**
+- `openai` — реальный синтез через `OPENAI_BASE_URL` (официальный OpenAI или ProxyAPI-совместимый
+  endpoint); голос подбирается по `VoiceProfile`
+- `none` / любое другое значение — намеренно беззвучная дорожка
 
-**Планируется:**
-- Интеграция с реальными TTS-сервисами
-- Разбиение текста на чанки (max 5000 символов)
-- Поддержка разных голосов и эмоций
+**Особенности:**
+- Длительность каждой реплики измеряется через `ffprobe` и записывается обратно в
+  `StorySlide.durationSeconds`; ручная длительность слайда действует как нижняя граница
+  (`max(длительность_озвучки + 0.4с, 2с, durationSeconds)`), поэтому обрезать уже озвученную
+  реплику невозможно
+- Если `ffprobe` недоступен, длительность оценивается по количеству символов, а уже
+  synthesized-аудио не отбрасывается
 
 ### Render Service (`render.service.ts`)
 
@@ -282,7 +341,8 @@ draft ──▶ script_generating ──▶ script_ready ──▶ rendering ─
 Проверка JWT-токена.
 
 **Последовательность:**
-1. Извлечение заголовка `Authorization: Bearer <token>`
+1. Извлечение токена — сначала заголовок `Authorization: Bearer <token>`, если его нет — из
+   httpOnly-cookie (`utils/authCookie.ts`); заголовок имеет приоритет, если присутствуют оба
 2. Верификация токена через `jwt.verify()`
 3. Загрузка пользователя из БД
 4. Добавление `req.user` в запрос
@@ -311,7 +371,8 @@ const registerSchema = z.object({
 Загрузка файлов через Multer.
 
 **Параметры:**
-- Хранение в памяти (memoryStorage)
+- Потоковая запись на диск во временную папку (`diskStorage`), не буферизация целиком в памяти —
+  ограничивает память на запрос, а не только суммарный размер файлов
 - Макс. размер: 10 МБ
 - Макс. файлов: 20
 - Фильтр форматов: JPG, PNG, WebP
@@ -335,23 +396,39 @@ const registerSchema = z.object({
 ### Аутентификация
 - JWT-токены с истечением 7 дней
 - Пароли хэшируются bcrypt
-- Токены хранятся в localStorage на клиенте
+- Токен передаётся httpOnly-cookie (`sameSite: 'lax'`, `secure` зависит от `req.secure`, учитывает
+  `trust proxy`) для браузера и заголовком `Authorization: Bearer` для остальных клиентов —
+  заголовок приоритетнее, если присутствуют оба; JS не может прочитать или очистить cookie сам,
+  поэтому есть `POST /api/auth/logout`
 
 ### Валидация
 - Zod-схемы на все входные данные
 - Проверка типов и ограничений
 - Санитизация строк
 
-### CORS
-- Белый список доменов
-- Credentials: true
-- Ограниченные методы и заголовки
+### HTTP
+- `helmet` — security-заголовки и CSP
+- Rate limiting на регистрацию/логин отдельно от остальных маршрутов
+- CORS: белый список доменов, `credentials: true`, ограниченные методы и заголовки
+
+### Публичные ссылки
+- Share-ссылка ключуется отдельным `shareToken` (UUID), а не `id` истории
+- Ссылку можно перевыпустить (`POST /share/rotate`, старая перестаёт работать) или отозвать
+  (`DELETE /share`)
+
+### FFmpeg
+- Аргументы передаются массивом в `spawn` с `shell: false` — командная строка никогда не собирается
+- Подпись слайда попадает в `drawtext` только через файл (`textfile=...`), никогда не в argv или
+  в filtergraph — так пользовательский текст (`PUT /slides`) не может быть интерпретирован как
+  часть команды
 
 ### Файлы
 - Проверка MIME-типов
 - Ограничение размера
 - Оптимизация изображений (sharp)
-- Автоматическая очистка старых файлов
+- Загрузка — потоковая запись на диск (`diskStorage`), не буферизация в памяти
+- Автоматическая очистка файлов историй старше `FILE_RETENTION_DAYS` (целиком со строкой БД, не
+  только файлов) и отдельная очистка `uploads/temp`
 
 ### Логирование
 - Маскирование чувствительных данных (JWT, пароли)
@@ -363,50 +440,41 @@ const registerSchema = z.object({
 ## Масштабирование
 
 ### Текущие ограничения
-- FFmpeg выполняется синхронно (блокирует event loop)
-- Файлы хранятся локально
-- Нет очередей задач
-- Нет кэширования
+- Файлы хранятся локально (нет S3/облачного хранилища)
+- Нет кэширования шаблонов и сценариев
+- Прогресс генерации доступен только через поллинг `GET /stories/:id/status`, нет WebSockets/SSE
 
 ### Планы масштабирования
-1. **Worker-процессы** для FFmpeg
-2. **Redis + BullMQ** для очередей
-3. **S3-хранилище** для файлов
-4. **Кэширование** шаблонов и сценариев
-5. **WebSockets** для real-time статусов
-6. **CDN** для статики и медиа
-7. **Load balancer** для нескольких инстансов бэкенда
+1. **S3-хранилище** для файлов
+2. **Кэширование** шаблонов и сценариев
+3. **WebSockets** для real-time статусов
+4. **CDN** для статики и медиа
+5. **Load balancer** и несколько инстансов воркера/бэкенда
 
 ---
 
 ## Развёртывание
+
+Docker Compose уже реализован — `docker-compose.yml` в корне репозитория, многоступенчатые
+`Dockerfile` в `backend/` и `frontend/`. Шесть сервисов: `postgres`, `redis`, `init` (одноразовый
+`migrate` + `seed`, `backend` дожидается его через `service_completed_successfully`), `backend`,
+`worker`, `frontend` (nginx). Запуск:
+
+```bash
+JWT_SECRET=$(node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))") docker compose up --build
+```
 
 ### Production Checklist
 
 - [ ] `NODE_ENV=production`
 - [ ] Сильный `JWT_SECRET`
 - [ ] PostgreSQL вместо SQLite
-- [ ] Redis для очередей
+- [x] Redis + BullMQ для очередей, отдельный процесс воркера
 - [ ] S3 для файлов
-- [ ] HTTPS
-- [ ] Reverse proxy (Nginx)
-- [ ] Process manager (PM2)
+- [ ] HTTPS (терминируется на обратном прокси, сервис сам её не обслуживает)
+- [ ] Reverse proxy (Nginx) перед бэкендом — во фронтенд-образе Nginx уже раздаёт статику
+- [ ] Process manager (PM2) — в Docker роль планировщика перезапуска берёт на себя `restart` политика/оркестратор
 - [ ] Мониторинг и алерты
 - [ ] Бэкапы БД
-- [ ] CI/CD пайплайн
-
-### Docker (планируется)
-
-```dockerfile
-# Backend
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY dist ./dist
-CMD ["node", "dist/server.js"]
-
-# Frontend
-FROM nginx:alpine
-COPY dist /usr/share/nginx/html
-```
+- [x] CI/CD пайплайн — `.github/workflows/ci.yml`: типы/линт/сборка/тесты для обоих пакетов, сборка
+      Docker-образов, smoke-тест через `docker compose` с рендером настоящего видео
