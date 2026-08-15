@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '../components/AuthContext';
 import { api } from '../services/api';
 import { Story, StorySlide, Task } from '../types';
 import toast from 'react-hot-toast';
@@ -33,7 +32,6 @@ function describeStep(progress: number): string {
 
 export default function StoryResultPage() {
   const { id } = useParams<{ id: string }>();
-  const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [story, setStory] = useState<Story | null>(null);
   const [task, setTask] = useState<Task | null>(null);
@@ -64,12 +62,8 @@ export default function StoryResultPage() {
   };
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      navigate('/login');
-      return;
-    }
     loadStory();
-  }, [id, isAuthenticated, navigate]);
+  }, [id]);
 
   // Poll while work is in flight. 'draft' is included because creating a story
   // kicks off script generation in the background — without it a page opened

@@ -1,13 +1,11 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../components/AuthContext';
 import { api } from '../services/api';
 import { Template, UploadedFile, VoiceProfile } from '../types';
 import { useDropzone } from 'react-dropzone';
 import toast from 'react-hot-toast';
 
 export default function CreateStoryPage() {
-  const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
   const [files, setFiles] = useState<UploadedFile[]>([]);
@@ -21,10 +19,6 @@ export default function CreateStoryPage() {
   const [uploadPercent, setUploadPercent] = useState(0);
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      navigate('/login');
-      return;
-    }
     api
       .getTemplates()
       .then((res) => {
@@ -40,7 +34,7 @@ export default function CreateStoryPage() {
       .getVoices()
       .then((res) => setVoices(res.data.voices))
       .catch(() => setVoices([]));
-  }, [isAuthenticated, navigate]);
+  }, []);
 
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {

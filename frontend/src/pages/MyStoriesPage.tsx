@@ -1,13 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../components/AuthContext';
+import { Link } from 'react-router-dom';
 import { api } from '../services/api';
 import { Story } from '../types';
 import toast from 'react-hot-toast';
 
 export default function MyStoriesPage() {
-  const { isAuthenticated } = useAuth();
-  const navigate = useNavigate();
   const [stories, setStories] = useState<Story[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -23,12 +20,8 @@ export default function MyStoriesPage() {
   };
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      navigate('/login');
-      return;
-    }
     loadStories();
-  }, [isAuthenticated, navigate]);
+  }, []);
 
   const statusLabels: Record<string, { text: string; color: string }> = {
     draft: { text: 'Черновик', color: '#6b7280' },

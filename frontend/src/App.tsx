@@ -10,6 +10,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import SharePage from './pages/SharePage';
 import { AuthProvider } from './components/AuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
   return (
@@ -31,9 +32,30 @@ function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
-          <Route path="/create" element={<CreateStoryPage />} />
-          <Route path="/stories" element={<MyStoriesPage />} />
-          <Route path="/stories/:id" element={<StoryResultPage />} />
+          <Route
+            path="/create"
+            element={
+              <ProtectedRoute>
+                <CreateStoryPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/stories"
+            element={
+              <ProtectedRoute>
+                <MyStoriesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/stories/:id"
+            element={
+              <ProtectedRoute>
+                <StoryResultPage />
+              </ProtectedRoute>
+            }
+          />
           <Route path="/share/:id" element={<SharePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
