@@ -163,6 +163,13 @@ Story.init(
     sequelize,
     tableName: 'stories',
     timestamps: true,
+    indexes: [
+      // MyStoriesPage lists every story owned by the current user — without this,
+      // that query is a full table scan. Postgres does not index foreign keys
+      // automatically.
+      { name: 'stories_user_id_idx', fields: ['userId'] },
+      { name: 'stories_status_idx', fields: ['status'] },
+    ],
   },
 );
 

@@ -91,6 +91,11 @@ StorySlide.init(
     sequelize,
     tableName: 'story_slides',
     timestamps: true,
+    indexes: [
+      // Every slide list is loaded by storyId (via the Story include); Postgres
+      // does not index foreign keys automatically.
+      { name: 'story_slides_story_id_idx', fields: ['storyId'] },
+    ],
   },
 );
 

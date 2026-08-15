@@ -35,6 +35,7 @@ beforeAll(async () => {
   const seed = new Sequelize({ dialect: 'sqlite', storage: dbPath, logging: false });
   await seed.getQueryInterface().createTable('stories', {
     id: { type: DataTypes.UUID, primaryKey: true },
+    userId: { type: DataTypes.UUID, allowNull: false },
     title: { type: DataTypes.STRING, allowNull: false },
     status: { type: DataTypes.STRING, allowNull: false },
   });
@@ -69,7 +70,13 @@ describe('migration 0001-add-story-share-token against a pre-existing SQLite dat
     await db
       .getQueryInterface()
       .bulkInsert('stories', [
-        { id: 'story-a', title: 'A', status: 'ready', shareToken: 'token-shared' },
+        {
+          id: 'story-a',
+          userId: 'user-a',
+          title: 'A',
+          status: 'ready',
+          shareToken: 'token-shared',
+        },
       ]);
 
     let rejection: any;
@@ -77,7 +84,13 @@ describe('migration 0001-add-story-share-token against a pre-existing SQLite dat
       await db
         .getQueryInterface()
         .bulkInsert('stories', [
-          { id: 'story-b', title: 'B', status: 'ready', shareToken: 'token-shared' },
+          {
+            id: 'story-b',
+            userId: 'user-b',
+            title: 'B',
+            status: 'ready',
+            shareToken: 'token-shared',
+          },
         ]);
     } catch (error) {
       rejection = error;
@@ -87,5 +100,51 @@ describe('migration 0001-add-story-share-token against a pre-existing SQLite dat
     expect(String(rejection?.original?.message ?? rejection?.message)).toMatch(/unique/i);
 
     await db.close();
+  });
+});
+
+describe('migration 0002-add-performance-indexes', () => {
+  it('adds stories/story_slides/tasks indexes to the same pre-existing database', async () => {
+    // The previous describe block already ran migrate.js against dbPath once,
+    // applying both 0001 and 0002 in the same pass — this asserts 0002 actually
+    // created what it claims to.
+    const db = new Sequelize({ dialect: 'sqlite', storage: dbPath, logging: false });
+
+    const storiesIndexes = await db.getQueryInterface().showIndex('stories');
+    const names = (storiesIndexes as Array<{ name: string }>).map((idx) => idx.name);
+    expect(names).toContain('stories_user_id_idx');
+    expect(names).toContain('stories_status_idx');
+
+    await db.close();
+  });
+
+  it('is a no-op on a brand-new database, where sync() already created the same indexes', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'family-cinema-migration-fresh-'));
+    const freshDb = path.join(root, 'fresh.sqlite');
+    const freshUploads = path.join(root, 'uploads');
+
+    // No pre-seeded table here: sync() creates `stories`/`story_slides`/`tasks`
+    // from the current model definitions, indexes included, before either
+    // migration's `up()` runs — this is the idempotency path every fresh
+    // dev/Docker database takes, and where a naive unconditional addIndex
+    // would fail exactly like migration 0001's unconditional addColumn did.
+    expect(() =>
+      execFileSync(process.execPath, ['dist/utils/migrate.js'], {
+        cwd: BACKEND_ROOT,
+        stdio: 'pipe',
+        timeout: 60_000,
+        env: {
+          ...process.env,
+          NODE_ENV: 'development',
+          JWT_SECRET: STRONG_SECRET,
+          LOG_LEVEL: 'silent',
+          DB_DIALECT: 'sqlite',
+          DB_STORAGE: freshDb,
+          STORAGE_PATH: freshUploads,
+          REDIS_PORT: '6399',
+          OPENAI_API_KEY: '',
+        },
+      }),
+    ).not.toThrow();
   });
 });

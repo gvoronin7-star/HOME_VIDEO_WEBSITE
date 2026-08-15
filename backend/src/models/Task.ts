@@ -90,6 +90,11 @@ Task.init(
     sequelize,
     tableName: 'tasks',
     timestamps: false,
+    indexes: [
+      // getStatus and the worker's task lookup both filter by storyId; Postgres
+      // does not index foreign keys automatically.
+      { name: 'tasks_story_id_idx', fields: ['storyId'] },
+    ],
   },
 );
 

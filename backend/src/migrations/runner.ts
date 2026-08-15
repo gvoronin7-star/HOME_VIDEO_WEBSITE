@@ -1,6 +1,7 @@
 import { Umzug, SequelizeStorage } from 'umzug';
 import sequelize from '../models/sequelize';
 import * as m0001 from './0001-add-story-share-token';
+import * as m0002 from './0002-add-performance-indexes';
 
 /**
  * Versioned migrations, for changes `sequelize.sync()` cannot make safely
@@ -14,7 +15,10 @@ import * as m0001 from './0001-add-story-share-token';
  * glob pattern has to be kept in sync with the build output extension.
  */
 export const umzug = new Umzug({
-  migrations: [{ name: '0001-add-story-share-token', up: m0001.up, down: m0001.down }],
+  migrations: [
+    { name: '0001-add-story-share-token', up: m0001.up, down: m0001.down },
+    { name: '0002-add-performance-indexes', up: m0002.up, down: m0002.down },
+  ],
   context: sequelize.getQueryInterface(),
   storage: new SequelizeStorage({ sequelize }),
   logger: console,
