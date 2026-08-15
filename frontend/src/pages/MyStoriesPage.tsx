@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../services/api';
 import { Story } from '../types';
+import { describeStatus } from '../utils/storyStatus';
 import toast from 'react-hot-toast';
 
 export default function MyStoriesPage() {
@@ -22,15 +23,6 @@ export default function MyStoriesPage() {
   useEffect(() => {
     loadStories();
   }, []);
-
-  const statusLabels: Record<string, { text: string; color: string }> = {
-    draft: { text: 'Черновик', color: '#6b7280' },
-    script_generating: { text: 'Генерация...', color: '#f59e0b' },
-    script_ready: { text: 'Сценарий готов', color: '#10b981' },
-    rendering: { text: 'Рендеринг...', color: '#f59e0b' },
-    ready: { text: 'Готово', color: '#10b981' },
-    error: { text: 'Ошибка', color: '#ef4444' },
-  };
 
   if (isLoading) {
     return <div className="loading">Загрузка...</div>;
@@ -57,7 +49,7 @@ export default function MyStoriesPage() {
       ) : (
         <div className="stories-grid">
           {stories.map((story) => {
-            const status = statusLabels[story.status] || { text: story.status, color: '#666' };
+            const status = describeStatus(story.status);
             return (
               <Link to={`/stories/${story.id}`} key={story.id} className="story-card-link">
                 <div className="story-card">

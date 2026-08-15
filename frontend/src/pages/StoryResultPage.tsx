@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { Story, StorySlide, Task } from '../types';
+import { describeStatus, describeStep } from '../utils/storyStatus';
 import toast from 'react-hot-toast';
 
 /** Statuses that mean the backend is still working — worth polling. */
@@ -10,24 +11,11 @@ const POLLED_STATUSES: Story['status'][] = ['draft', 'script_generating', 'rende
 /** Statuses the user can launch generation from. */
 const LAUNCHABLE_STATUSES: Story['status'][] = ['draft', 'script_ready', 'error'];
 
-/**
- * What the worker is doing at a given progress value. The worker reports
- * 5 → 10 → 30 → 40 → 80 → 85 → 100 as it moves through the pipeline.
- */
 /** Statuses in which the script may be edited — not while work is in flight. */
 const EDITABLE_STATUSES: Story['status'][] = ['script_ready', 'ready', 'error'];
 
 function sortedSlides(story: Story | null): StorySlide[] {
   return [...(story?.slides || [])].sort((a, b) => a.orderIndex - b.orderIndex);
-}
-
-function describeStep(progress: number): string {
-  if (progress < 10) return 'Задача принята в очередь';
-  if (progress < 30) return 'ИИ пишет сценарий';
-  if (progress < 40) return 'Озвучиваем кадры';
-  if (progress < 80) return 'Собираем видео';
-  if (progress < 100) return 'Готовим PDF и QR-код';
-  return 'Готово';
 }
 
 export default function StoryResultPage() {
@@ -270,16 +258,7 @@ export default function StoryResultPage() {
     return <div className="error">История не найдена</div>;
   }
 
-  const statusLabels: Record<string, { text: string; color: string }> = {
-    draft: { text: 'Черновик', color: '#666' },
-    script_generating: { text: 'Генерация сценария...', color: '#f59e0b' },
-    script_ready: { text: 'Сценарий готов', color: '#10b981' },
-    rendering: { text: 'Рендеринг видео...', color: '#f59e0b' },
-    ready: { text: 'Готово!', color: '#10b981' },
-    error: { text: 'Ошибка', color: '#ef4444' },
-  };
-
-  const statusInfo = statusLabels[story.status] || { text: story.status, color: '#666' };
+  const statusInfo = describeStatus(story.status);
 
   return (
     <div className="story-result-page">
