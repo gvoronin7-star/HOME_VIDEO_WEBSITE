@@ -16,6 +16,9 @@ StorySlide.belongsTo(Story, { foreignKey: 'storyId', as: 'story' });
 Story.belongsTo(Template, { foreignKey: 'templateId', as: 'template' });
 Template.hasMany(Story, { foreignKey: 'templateId', as: 'stories' });
 
+Story.belongsTo(VoiceProfile, { foreignKey: 'voiceProfileId', as: 'voiceProfile' });
+VoiceProfile.hasMany(Story, { foreignKey: 'voiceProfileId', as: 'stories' });
+
 // Task associations
 Story.hasMany(Task, { foreignKey: 'storyId', as: 'tasks', onDelete: 'CASCADE' });
 Task.belongsTo(Story, { foreignKey: 'storyId', as: 'story' });

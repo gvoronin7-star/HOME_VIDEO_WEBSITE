@@ -3,7 +3,13 @@ import path from 'path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
-import { bootTestApp, makeJpeg, registerUser, seedTemplate } from './helpers/testApp';
+import {
+  bootTestApp,
+  makeJpeg,
+  registerUser,
+  seedTemplate,
+  seedVoiceProfiles,
+} from './helpers/testApp';
 
 let app: Express;
 let models: any;
@@ -238,6 +244,70 @@ describe('worker: regenerating a story (F6)', () => {
     } finally {
       generateSpy.mockRestore();
       restore();
+    }
+  });
+});
+
+describe('worker: resolves a chosen voice profile for narration (VoiceProfile wiring)', () => {
+  it("passes the profile's apiVoiceId to the TTS step instead of just gender/tone", async () => {
+    const { userId } = await registerUser(app);
+    const template = await seedTemplate(models);
+    await seedVoiceProfiles(models);
+    const voiceProfile = await models.VoiceProfile.findOne({
+      where: { name: 'Алексей (спокойный)' },
+    });
+
+    const story = await models.Story.create({
+      userId,
+      title: 'С выбранным голосом',
+      templateId: template.id,
+      status: 'script_ready',
+      tone: 'warm',
+      voiceGender: 'male',
+      voiceProfileId: voiceProfile.id,
+      scriptText: 'Уже готовый сценарий.',
+    });
+    await models.StorySlide.create({
+      storyId: story.id,
+      imageUrl: '/uploads/photos/a.jpg',
+      imageKey: 'photos/a.jpg',
+      orderIndex: 0,
+      isKeyFrame: true,
+      durationSeconds: 4,
+      caption: 'Фраза для озвучки.',
+    });
+
+    const ttsSpy = vi.spyOn(ttsService, 'synthesizeSlides').mockResolvedValue({
+      slides: [],
+      audioPath: null,
+      totalDurationSeconds: 0,
+      isSpeech: false,
+    });
+    const renderSpy = vi.spyOn(renderService, 'renderVideo').mockResolvedValue({
+      videoUrl: '/uploads/videos/test.mp4',
+      durationMs: 1000,
+    });
+    const qrSpy = vi.spyOn(qrService, 'generateQRCode').mockResolvedValue({
+      imageUrl: '/uploads/qrcodes/test.png',
+      key: 'qrcodes/test.png',
+    });
+    const pdfSpy = vi.spyOn(pdfService, 'generatePDFAlbum').mockResolvedValue({
+      pdfUrl: '/uploads/pdfs/test.pdf',
+      key: 'pdfs/test.pdf',
+    });
+
+    try {
+      const result = await processStoryGeneration('test-job-voice', { storyId: story.id, userId });
+
+      expect(result.success).toBe(true);
+      expect(ttsSpy).toHaveBeenCalledTimes(1);
+      // 4th argument: the resolved apiVoiceId, not just voiceGender + tone.
+      expect(ttsSpy.mock.calls[0][3]).toBe(voiceProfile.apiVoiceId);
+    } finally {
+      ttsSpy.mockRestore();
+      renderSpy.mockRestore();
+      qrSpy.mockRestore();
+      pdfSpy.mockRestore();
     }
   });
 });

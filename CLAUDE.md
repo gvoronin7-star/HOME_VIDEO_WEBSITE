@@ -125,6 +125,29 @@ must change with it.
 If `ffprobe` is missing, the length is **estimated from character count and the audio is kept** —
 discarding speech that was already paid for is the wrong degradation.
 
+### Voice selection: a picked profile beats the gender/tone guess
+
+`tts.service.ts`'s `VOICE_MAP` maps `gender:emotion` (e.g. `female:warm`) to a provider voice name —
+a guess used only when a story never picked a specific voice. `Story.voiceProfileId` (nullable, added
+after `shareToken`/indexes by migration `0003-add-story-voice-profile-id.ts`) names an exact
+`VoiceProfile` row instead; when present, `generationQueue.ts` includes it on the story fetch and
+passes its `apiVoiceId` as `synthesizeSlides()`'s 4th argument, which `resolveVoice()` returns
+unconditionally ahead of the `VOICE_MAP` lookup. `story.controller.ts`'s `create()` derives
+`voiceGender` from the chosen profile rather than trusting a separately-submitted field that could
+disagree with it, and rejects an unknown `voiceProfileId` with 422 before any photo processing runs.
+
+`GET /api/voices` deliberately excludes `apiVoiceId` from its response — the picker only needs
+`name`/`gender`/`emotion`/`previewUrl`, and the provider voice id has no reason to reach the browser.
+
+The seeded profiles' `apiVoiceId` values must be real names for whatever `TTS_SERVICE` is configured
+(currently OpenAI voice names like `nova`/`onyx`, matching `VOICE_MAP`'s own values) — they used to be
+Azure Speech voice names (`ru-RU-DariyaNeural`), which the OpenAI-compatible endpoint this project
+actually calls would have rejected outright the first time a picked profile's id reached it.
+`utils/seed.ts`'s voice-profile loop reconciles an already-seeded row's `apiVoiceId`/`gender`/`emotion`
+against the current list on every run for exactly this reason — `findOrCreate` alone only applies
+`defaults` when creating a row, so a database seeded before this fix would otherwise carry the broken
+value forever.
+
 ### FFmpeg is invoked with an argument array, never a shell
 
 `runFfmpeg(args: string[])` in `ffmpeg.helper.ts` uses `spawn` with `shell: false`, and slide

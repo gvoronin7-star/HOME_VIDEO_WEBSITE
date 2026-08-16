@@ -83,30 +83,34 @@ const templates = [
   },
 ];
 
+// apiVoiceId values must be real voice names for the configured TTS_SERVICE
+// (see VOICE_MAP in tts.service.ts) — these used to be Azure Speech voice
+// names (e.g. 'ru-RU-DariyaNeural'), which the OpenAI-compatible endpoint
+// this project actually calls rejects outright.
 const voiceProfiles = [
   {
     name: 'Елена (тёплый)',
     gender: 'female' as const,
     emotion: 'warm',
-    apiVoiceId: 'ru-RU-DariyaNeural',
+    apiVoiceId: 'nova',
   },
   {
     name: 'Мария (спокойный)',
     gender: 'female' as const,
     emotion: 'calm',
-    apiVoiceId: 'ru-RU-SvetlanaNeural',
+    apiVoiceId: 'shimmer',
   },
   {
     name: 'Алексей (тёплый)',
     gender: 'male' as const,
     emotion: 'warm',
-    apiVoiceId: 'ru-RU-DmitryNeural',
+    apiVoiceId: 'onyx',
   },
   {
     name: 'Иван (спокойный)',
     gender: 'male' as const,
     emotion: 'calm',
-    apiVoiceId: 'ru-RU-MaximNeural',
+    apiVoiceId: 'echo',
   },
 ];
 
@@ -126,14 +130,25 @@ async function seed() {
       }
     }
 
-    // Seed voice profiles
+    // Seed voice profiles. `findOrCreate` alone would leave a database seeded
+    // before the Azure-shaped apiVoiceId values were replaced with real ones
+    // stuck on the old (invalid) value forever, since it only applies
+    // `defaults` on create — so an existing row's apiVoiceId/gender/emotion
+    // are reconciled with the canonical list on every run too.
     for (const profile of voiceProfiles) {
-      const [created] = await VoiceProfile.findOrCreate({
+      const [voiceProfile, created] = await VoiceProfile.findOrCreate({
         where: { name: profile.name },
         defaults: profile,
       });
       if (created) {
         logger.info({ profileName: profile.name }, 'Voice profile seeded');
+      } else if (
+        voiceProfile.apiVoiceId !== profile.apiVoiceId ||
+        voiceProfile.gender !== profile.gender ||
+        voiceProfile.emotion !== profile.emotion
+      ) {
+        await voiceProfile.update(profile);
+        logger.info({ profileName: profile.name }, 'Voice profile updated to match seed data');
       }
     }
 

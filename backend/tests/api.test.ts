@@ -132,6 +132,42 @@ describe('story creation (B1)', () => {
       .not.toBe('draft');
   });
 
+  it('picking a voice profile pins its id and derives voiceGender from it (VoiceProfile wiring)', async () => {
+    const { token } = await registerUser(app);
+    const template = await seedTemplate(models);
+    const photo = await makeJpeg();
+    // Seeded by seedVoiceProfiles: male, apiVoiceId 'echo'.
+    const voice = await models.VoiceProfile.findOne({ where: { name: 'Алексей (спокойный)' } });
+
+    const response = await request(app)
+      .post('/api/stories')
+      .set('Authorization', `Bearer ${token}`)
+      .field('templateId', template.id)
+      .field('voiceProfileId', voice.id)
+      // Deliberately mismatched — the profile's own gender must win, not this.
+      .field('voiceGender', 'female')
+      .attach('photos', photo, 'a.jpg')
+      .expect(201);
+
+    const story = await models.Story.findByPk(response.body.data.story.id);
+    expect(story.voiceProfileId).toBe(voice.id);
+    expect(story.voiceGender).toBe('male');
+  });
+
+  it('rejects an unknown voice profile id with 422', async () => {
+    const { token } = await registerUser(app);
+    const template = await seedTemplate(models);
+    const photo = await makeJpeg();
+
+    await request(app)
+      .post('/api/stories')
+      .set('Authorization', `Bearer ${token}`)
+      .field('templateId', template.id)
+      .field('voiceProfileId', '11111111-1111-4111-8111-111111111111')
+      .attach('photos', photo, 'a.jpg')
+      .expect(422);
+  });
+
   it('rejects a request with no photos', async () => {
     const { token } = await registerUser(app);
     const template = await seedTemplate(models);

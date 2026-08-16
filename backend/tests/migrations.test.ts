@@ -67,31 +67,27 @@ describe('migration 0001-add-story-share-token against a pre-existing SQLite dat
   it('actually enforces uniqueness on the new column, not just adds it', async () => {
     const db = new Sequelize({ dialect: 'sqlite', storage: dbPath, logging: false });
 
-    await db
-      .getQueryInterface()
-      .bulkInsert('stories', [
+    await db.getQueryInterface().bulkInsert('stories', [
+      {
+        id: 'story-a',
+        userId: 'user-a',
+        title: 'A',
+        status: 'ready',
+        shareToken: 'token-shared',
+      },
+    ]);
+
+    let rejection: any;
+    try {
+      await db.getQueryInterface().bulkInsert('stories', [
         {
-          id: 'story-a',
-          userId: 'user-a',
-          title: 'A',
+          id: 'story-b',
+          userId: 'user-b',
+          title: 'B',
           status: 'ready',
           shareToken: 'token-shared',
         },
       ]);
-
-    let rejection: any;
-    try {
-      await db
-        .getQueryInterface()
-        .bulkInsert('stories', [
-          {
-            id: 'story-b',
-            userId: 'user-b',
-            title: 'B',
-            status: 'ready',
-            shareToken: 'token-shared',
-          },
-        ]);
     } catch (error) {
       rejection = error;
     }
@@ -117,17 +113,31 @@ describe('migration 0002-add-performance-indexes', () => {
 
     await db.close();
   });
+});
 
-  it('is a no-op on a brand-new database, where sync() already created the same indexes', () => {
+describe('migration 0003-add-story-voice-profile-id', () => {
+  it('adds voiceProfileId to the same pre-existing database', async () => {
+    const db = new Sequelize({ dialect: 'sqlite', storage: dbPath, logging: false });
+
+    const columns = await db.getQueryInterface().describeTable('stories');
+    expect(columns).toHaveProperty('voiceProfileId');
+
+    await db.close();
+  });
+});
+
+describe('a brand-new database', () => {
+  it('runs all three migrations as a no-op, since sync() already created everything they add', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'family-cinema-migration-fresh-'));
     const freshDb = path.join(root, 'fresh.sqlite');
     const freshUploads = path.join(root, 'uploads');
 
-    // No pre-seeded table here: sync() creates `stories`/`story_slides`/`tasks`
-    // from the current model definitions, indexes included, before either
-    // migration's `up()` runs — this is the idempotency path every fresh
-    // dev/Docker database takes, and where a naive unconditional addIndex
-    // would fail exactly like migration 0001's unconditional addColumn did.
+    // No pre-seeded table here: sync() creates every table from the current
+    // model definitions — indexes and voiceProfileId included — before any
+    // migration's `up()` runs. This is the idempotency path every fresh
+    // dev/Docker database takes, and where a naive unconditional addColumn or
+    // addIndex would fail exactly like migration 0001's unconditional
+    // addColumn did before it gained its describeTable guard.
     expect(() =>
       execFileSync(process.execPath, ['dist/utils/migrate.js'], {
         cwd: BACKEND_ROOT,

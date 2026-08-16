@@ -101,6 +101,7 @@ export class TTSService {
     slides: Array<{ orderIndex: number; caption: string; durationSeconds: number }>,
     voice: 'male' | 'female',
     emotion?: string,
+    apiVoiceId?: string | null,
   ): Promise<SlideNarrationResult> {
     const narrations: SlideNarration[] = [];
 
@@ -129,7 +130,7 @@ export class TTSService {
 
       let audioPath: string;
       try {
-        audioPath = await this.synthesizeToFile(caption, voice, emotion);
+        audioPath = await this.synthesizeToFile(caption, voice, emotion, apiVoiceId);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : 'Unknown error';
         logger.error(
@@ -215,7 +216,17 @@ export class TTSService {
     return Math.max(text.length / 14, 1.5);
   }
 
-  private resolveVoice(voice: 'male' | 'female', emotion?: string): string {
+  /**
+   * A story-picked voice profile's `apiVoiceId` always wins when present —
+   * it names an exact provider voice, which is strictly more specific than
+   * the gender/tone guess VOICE_MAP makes for stories that never picked one.
+   */
+  private resolveVoice(
+    voice: 'male' | 'female',
+    emotion?: string,
+    apiVoiceId?: string | null,
+  ): string {
+    if (apiVoiceId) return apiVoiceId;
     const key = `${voice}:${(emotion || 'warm').toLowerCase()}`;
     return VOICE_MAP[key] || VOICE_FALLBACK[voice];
   }
@@ -229,6 +240,7 @@ export class TTSService {
     text: string,
     voice: 'male' | 'female',
     emotion?: string,
+    apiVoiceId?: string | null,
   ): Promise<string> {
     if (!this.client) throw new Error('TTS client is not configured');
 
@@ -241,7 +253,7 @@ export class TTSService {
       input = input.slice(0, MAX_INPUT_CHARS);
     }
 
-    const resolvedVoice = this.resolveVoice(voice, emotion);
+    const resolvedVoice = this.resolveVoice(voice, emotion, apiVoiceId);
     const format = config.tts.format;
     const hash = crypto
       .createHash('sha256')

@@ -2,7 +2,7 @@ import { Queue, Worker } from 'bullmq';
 import { Redis } from 'ioredis';
 import { config } from '../config';
 import { logger } from '../utils/logger';
-import { Story, StorySlide, Template, Task } from '../models';
+import { Story, StorySlide, Template, Task, VoiceProfile } from '../models';
 import { aiService } from '../services/ai.service';
 import { renderService } from '../services/render.service';
 import { ttsService } from '../services/tts.service';
@@ -127,6 +127,7 @@ export async function processStoryGeneration(
     include: [
       { model: Template, as: 'template' },
       { model: StorySlide, as: 'slides', order: [['orderIndex', 'ASC']] },
+      { model: VoiceProfile, as: 'voiceProfile' },
     ],
   });
 
@@ -226,6 +227,7 @@ export async function processStoryGeneration(
     include: [
       { model: Template, as: 'template' },
       { model: StorySlide, as: 'slides', order: [['orderIndex', 'ASC']] },
+      { model: VoiceProfile, as: 'voiceProfile' },
     ],
   });
 
@@ -255,6 +257,7 @@ export async function processStoryGeneration(
       })),
       story.voiceGender as 'male' | 'female',
       story.tone,
+      story.voiceProfile?.apiVoiceId,
     );
 
     audioPath = narration.audioPath;

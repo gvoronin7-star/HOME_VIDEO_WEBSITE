@@ -31,6 +31,7 @@ export interface Story {
   status: 'draft' | 'script_generating' | 'script_ready' | 'rendering' | 'ready' | 'error';
   tone: string;
   voiceGender: 'male' | 'female';
+  voiceProfileId: string | null;
   scriptText: string | null;
   videoUrl: string | null;
   pdfUrl: string | null;

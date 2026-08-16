@@ -244,6 +244,21 @@ describe('speech synthesis (F1)', () => {
     expect(speech[0].body.voice).toBe(expectedVoice);
   });
 
+  it('prefers a story-picked voice profile over the gender/tone VOICE_MAP fallback', async () => {
+    recorded.length = 0;
+
+    await ttsService.synthesizeSlides(
+      [{ orderIndex: 0, caption: 'Реплика с выбранным голосом.', durationSeconds: 4 }],
+      'female',
+      'warm',
+      'coral', // 'female:warm' would normally resolve to 'nova' — this must win instead.
+    );
+
+    const speech = recorded.filter((entry) => entry.url.includes('/audio/speech'));
+    expect(speech).toHaveLength(1);
+    expect(speech[0].body.voice).toBe('coral');
+  });
+
   it('caches by text, voice and model so a re-run costs nothing', async () => {
     await ttsService.synthesizeSlides(slides, 'female', 'warm');
     recorded.length = 0;

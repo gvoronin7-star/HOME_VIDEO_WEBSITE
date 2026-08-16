@@ -14,6 +14,7 @@ export default function CreateStoryPage() {
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
   const [tone, setTone] = useState<string>('warm');
   const [voiceGender, setVoiceGender] = useState<'male' | 'female'>('female');
+  const [voiceProfileId, setVoiceProfileId] = useState<string>('');
   const [title, setTitle] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadPercent, setUploadPercent] = useState(0);
@@ -32,7 +33,12 @@ export default function CreateStoryPage() {
     // Voice profiles are optional garnish — a failure here must not block creation.
     api
       .getVoices()
-      .then((res) => setVoices(res.data.voices))
+      .then((res) => {
+        setVoices(res.data.voices);
+        if (res.data.voices.length > 0) {
+          setVoiceProfileId(res.data.voices[0].id);
+        }
+      })
       .catch(() => setVoices([]));
   }, []);
 
@@ -103,7 +109,15 @@ export default function CreateStoryPage() {
       files.forEach((f) => formData.append('photos', f.file));
       formData.append('templateId', selectedTemplate);
       formData.append('tone', tone);
-      formData.append('voiceGender', voiceGender);
+      // A specific named voice, when one was picked from the catalogue, is a
+      // stronger signal than gender alone — the server derives voiceGender
+      // from it. Otherwise (no profiles loaded) fall back to the plain
+      // gender picker.
+      if (voices.length > 0 && voiceProfileId) {
+        formData.append('voiceProfileId', voiceProfileId);
+      } else {
+        formData.append('voiceGender', voiceGender);
+      }
       if (title) formData.append('title', title);
 
       const res = await api.createStory(formData, setUploadPercent);
@@ -235,17 +249,19 @@ export default function CreateStoryPage() {
             <h2 className="mt-3">🎤 Голос озвучки</h2>
             {voices.length > 0 ? (
               <select
-                value={voiceGender}
-                onChange={(e) => setVoiceGender(e.target.value as 'male' | 'female')}
+                value={voiceProfileId}
+                onChange={(e) => setVoiceProfileId(e.target.value)}
                 className="form-select"
                 aria-label="Голос озвучки"
               >
-                {/* Real profiles from the server, grouped so the mood is visible. */}
+                {/* Real profiles from the server, grouped so the mood is visible.
+                    Each option is the profile's own id — picking one selects that
+                    exact voice, not just its gender. */}
                 <optgroup label="Женские">
                   {voices
                     .filter((v) => v.gender === 'female')
                     .map((v) => (
-                      <option key={v.id} value="female">
+                      <option key={v.id} value={v.id}>
                         {v.name}
                       </option>
                     ))}
@@ -254,7 +270,7 @@ export default function CreateStoryPage() {
                   {voices
                     .filter((v) => v.gender === 'male')
                     .map((v) => (
-                      <option key={v.id} value="male">
+                      <option key={v.id} value={v.id}>
                         {v.name}
                       </option>
                     ))}
@@ -272,7 +288,9 @@ export default function CreateStoryPage() {
               </select>
             )}
             <p className="section-hint">
-              Характер голоса подбирается под выбранное настроение истории.
+              {voices.length > 0
+                ? 'Выбранный голос звучит именно так, независимо от настроения истории.'
+                : 'Характер голоса подбирается под выбранное настроение истории.'}
             </p>
           </section>
 

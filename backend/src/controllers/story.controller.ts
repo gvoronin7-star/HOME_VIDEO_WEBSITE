@@ -1,6 +1,6 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
-import { Story, StorySlide, Template, Task } from '../models';
+import { Story, StorySlide, Template, Task, VoiceProfile } from '../models';
 import sequelize from '../models/sequelize';
 import { storageService } from '../services/storage.service';
 import { aiService } from '../services/ai.service';
@@ -29,7 +29,7 @@ export class StoryController {
   async create(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const files = req.files as Express.Multer.File[];
-      const { templateId, title, tone, voiceGender } = req.body;
+      const { templateId, title, tone, voiceGender, voiceProfileId } = req.body;
 
       if (!files || files.length === 0) {
         return res.status(422).json({
@@ -45,6 +45,25 @@ export class StoryController {
           success: false,
           error: { message: 'Шаблон не найден' },
         });
+      }
+
+      // A specific named voice is optional — stories that don't pick one keep
+      // falling back to the gender/tone-derived VOICE_MAP in tts.service.ts.
+      // When one is given it must actually exist, and its own gender is what
+      // the story is tagged with (the profile the user picked out of a
+      // catalogue is a stronger signal than a separately-submitted gender
+      // field that could disagree with it).
+      let voiceProfile: VoiceProfile | null = null;
+      let resolvedVoiceGender: 'male' | 'female' = voiceGender === 'male' ? 'male' : 'female';
+      if (voiceProfileId) {
+        voiceProfile = await VoiceProfile.findByPk(voiceProfileId);
+        if (!voiceProfile) {
+          return res.status(422).json({
+            success: false,
+            error: { message: 'Выбранный голос не найден' },
+          });
+        }
+        resolvedVoiceGender = voiceProfile.gender;
       }
 
       // Save photos to storage. `file.path` is multer's own temp copy
@@ -93,7 +112,8 @@ export class StoryController {
             templateId: template.id,
             status: 'draft',
             tone: tone || template.tone,
-            voiceGender: voiceGender || 'female',
+            voiceGender: resolvedVoiceGender,
+            voiceProfileId: voiceProfile?.id ?? null,
           },
           { transaction: t },
         );

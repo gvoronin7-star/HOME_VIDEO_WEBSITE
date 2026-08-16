@@ -2,6 +2,7 @@ import { DataTypes, Model, Optional } from 'sequelize';
 import sequelize from './sequelize';
 import { User } from './User';
 import { Template } from './Template';
+import { VoiceProfile } from './VoiceProfile';
 
 type StoryStatus = 'draft' | 'script_generating' | 'script_ready' | 'rendering' | 'ready' | 'error';
 
@@ -13,6 +14,11 @@ interface StoryAttributes {
   status: StoryStatus;
   tone: string;
   voiceGender: 'male' | 'female';
+  // Specific named voice, chosen from the seeded catalogue — when set, its
+  // apiVoiceId overrides the gender/tone-derived VOICE_MAP fallback in
+  // tts.service.ts. Nullable: stories created before this existed, or without
+  // picking a specific voice, fall back to that mapping as before.
+  voiceProfileId: string | null;
   scriptText: string | null;
   videoUrl: string | null;
   pdfUrl: string | null;
@@ -38,6 +44,7 @@ type StoryCreationAttributes = Optional<
   | 'qrCodeUrl'
   | 'publicUrl'
   | 'shareToken'
+  | 'voiceProfileId'
 >;
 
 export class Story
@@ -51,6 +58,7 @@ export class Story
   public status!: StoryStatus;
   public tone!: string;
   public voiceGender!: 'male' | 'female';
+  public voiceProfileId!: string | null;
   public scriptText!: string | null;
   public videoUrl!: string | null;
   public pdfUrl!: string | null;
@@ -63,6 +71,7 @@ export class Story
   // Associations (populated via include)
   public readonly slides?: any[];
   public readonly template?: Template;
+  public readonly voiceProfile?: VoiceProfile;
   public readonly tasks?: Array<{
     id: string;
     storyId: string;
@@ -122,6 +131,14 @@ Story.init(
     voiceGender: {
       type: DataTypes.ENUM('male', 'female'),
       defaultValue: 'female',
+    },
+    voiceProfileId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: {
+        model: VoiceProfile,
+        key: 'id',
+      },
     },
     scriptText: {
       type: DataTypes.TEXT,
