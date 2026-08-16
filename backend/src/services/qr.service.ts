@@ -34,23 +34,6 @@ export class QRService {
       throw new Error('QR code generation failed', { cause: error });
     }
   }
-
-  /**
-   * Generate a QR code as SVG string.
-   */
-  async generateQRCodeSVG(data: string): Promise<string> {
-    try {
-      const svgString = await QRCode.toString(data, {
-        type: 'svg',
-        width: 400,
-        margin: 2,
-      });
-      return svgString;
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Failed to generate QR code SVG');
-      throw new Error('QR code SVG generation failed', { cause: error });
-    }
-  }
 }
 
 export const qrService = new QRService();

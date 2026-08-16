@@ -6,12 +6,6 @@ import { logger } from '../utils/logger';
 import { config } from '../config';
 import { concatAudioFiles, probeDurationSeconds } from './ffmpeg.helper';
 
-interface TTSOptions {
-  text: string;
-  voice: 'male' | 'female';
-  emotion?: string;
-}
-
 export interface SlideNarration {
   /** Index of the slide this line belongs to. */
   orderIndex: number;
@@ -207,30 +201,6 @@ export class TTSService {
     };
   }
 
-  /**
-   * Single-shot synthesis. Kept for callers that need one file for a whole text;
-   * prefer `synthesizeSlides` in the render pipeline.
-   */
-  async synthesizeSpeech(options: TTSOptions): Promise<{ audioUrl: string; durationMs: number }> {
-    const { text, voice, emotion } = options;
-
-    if (!this.client) {
-      const durationMs = Math.max(text.length * 60, 2000);
-      const filePath = await this.writeSilence(durationMs / 1000);
-      return { audioUrl: `/uploads/audio/${path.basename(filePath)}`, durationMs };
-    }
-
-    const filePath = await this.synthesizeToFile(text, voice, emotion);
-    const durationSeconds = await probeDurationSeconds(filePath).catch(() =>
-      this.estimateDurationSeconds(text),
-    );
-
-    return {
-      audioUrl: `/uploads/audio/${path.basename(filePath)}`,
-      durationMs: Math.round(durationSeconds * 1000),
-    };
-  }
-
   // ===== Internals =====
 
   private audioDir(): string {
@@ -354,27 +324,6 @@ export class TTSService {
     buffer.writeUInt32LE(dataSize, 40);
 
     return buffer;
-  }
-
-  /** Split long text on sentence boundaries to fit the per-request limit. */
-  splitTextIntoChunks(text: string, maxChunkSize: number = MAX_INPUT_CHARS): string[] {
-    const chunks: string[] = [];
-    const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
-
-    let currentChunk = '';
-    for (const sentence of sentences) {
-      if ((currentChunk + sentence).length > maxChunkSize && currentChunk.length > 0) {
-        chunks.push(currentChunk.trim());
-        currentChunk = sentence;
-      } else {
-        currentChunk += sentence;
-      }
-    }
-    if (currentChunk.trim()) {
-      chunks.push(currentChunk.trim());
-    }
-
-    return chunks;
   }
 }
 

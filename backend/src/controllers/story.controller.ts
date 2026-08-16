@@ -4,12 +4,9 @@ import { Story, StorySlide, Template, Task } from '../models';
 import sequelize from '../models/sequelize';
 import { storageService } from '../services/storage.service';
 import { aiService } from '../services/ai.service';
-import { ttsService } from '../services/tts.service';
 import { renderService } from '../services/render.service';
-import { pdfService } from '../services/pdf.service';
 import { qrService } from '../services/qr.service';
 import { logger } from '../utils/logger';
-import path from 'path';
 import fs from 'fs/promises';
 import sharp from 'sharp';
 import { v4 as uuidv4 } from 'uuid';
@@ -695,85 +692,6 @@ export class StoryController {
       logger.info({ storyId }, 'Script generated successfully');
     } catch (error: any) {
       logger.error({ error: error.message, storyId }, 'Script generation failed');
-      await Story.update({ status: 'error' }, { where: { id: storyId } });
-    }
-  }
-
-  /**
-   * Full pipeline: script → TTS → render → PDF → QR.
-   */
-  private async processFullGeneration(storyId: string): Promise<void> {
-    try {
-      // Step 1: Generate script
-      await this.generateScript(storyId);
-      const story = await Story.findByPk(storyId, {
-        include: [{ model: StorySlide, as: 'slides', order: [['orderIndex', 'ASC']] }],
-      });
-
-      if (!story || !story.slides || story.status === 'error') {
-        throw new Error('Script generation failed');
-      }
-
-      await story.update({ status: 'rendering' });
-
-      // Step 2: Generate TTS
-      let audioPath: string | null = null;
-      if (story.scriptText) {
-        const ttsResult = await ttsService.synthesizeSpeech({
-          text: story.scriptText,
-          voice: story.voiceGender as 'male' | 'female',
-        });
-        if (ttsResult.audioUrl) {
-          audioPath = path.resolve(
-            storageService.getFilePath('audio/' + ttsResult.audioUrl.split('/').pop()!),
-          );
-        }
-      }
-
-      // Step 3: Render video
-      const slideData = story.slides.map((slide) => ({
-        imagePath: storageService.getFilePath(slide.imageKey),
-        caption: slide.caption,
-        durationSeconds: slide.durationSeconds,
-      }));
-
-      const renderResult = await renderService.renderVideo({
-        slides: slideData,
-        audioPath,
-        outputFileName: `story-${storyId}.mp4`,
-      });
-
-      await story.update({ videoUrl: renderResult.videoUrl });
-
-      // Step 4: Generate QR code
-      const shareToken = story.shareToken || uuidv4();
-      const publicUrl = buildShareUrl(shareToken);
-      const qrResult = await qrService.generateQRCode(publicUrl);
-
-      // Step 5: Generate PDF album
-      const pdfResult = await pdfService.generatePDFAlbum({
-        title: story.title,
-        templateName: story.template?.name || 'История',
-        slides: story.slides.map((slide) => ({
-          imageUrl: slide.imageUrl,
-          imagePath: storageService.getFilePath(slide.imageKey),
-          caption: slide.caption,
-          orderIndex: slide.orderIndex,
-        })),
-        qrCodePath: qrResult.key ? storageService.getFilePath(qrResult.key) : undefined,
-      });
-
-      await story.update({
-        status: 'ready',
-        pdfUrl: pdfResult.pdfUrl,
-        qrCodeUrl: qrResult.imageUrl,
-        publicUrl,
-        shareToken,
-      });
-
-      logger.info({ storyId }, 'Full generation completed successfully');
-    } catch (error: any) {
-      logger.error({ error: error.message, storyId }, 'Full generation failed');
       await Story.update({ status: 'error' }, { where: { id: storyId } });
     }
   }

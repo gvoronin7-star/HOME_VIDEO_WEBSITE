@@ -263,6 +263,3 @@ commands passing means nothing.
 ranked suggestions, `PLAN_4_DAYS.md` the execution status and an acceptance checklist. Two older
 documents in the root, `FS_CURRENT_STATE.md` and `FS_AUDIT_ONE.md`, are **historical and contradict
 the current code** — do not plan from them.
-
-Unused dependencies still declared: `react-beautiful-dnd` and `qrcode.react` in the frontend,
-`fluent-ffmpeg` in the backend (the project uses its own `spawn` wrapper).
